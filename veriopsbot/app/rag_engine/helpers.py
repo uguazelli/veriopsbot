@@ -30,6 +30,7 @@ DEFAULT_RETRIEVER_CANDIDATES = 10
 
 
 def _parse_params(raw: Any) -> Dict[str, Any]:
+    """Normalize a JSON-ish payload into a dict."""
     if isinstance(raw, dict):
         return raw
     if isinstance(raw, str):
@@ -44,6 +45,7 @@ def _parse_params(raw: Any) -> Dict[str, Any]:
 
 
 def _coerce_int(value: Any, default: int) -> int:
+    """Best-effort conversion that falls back to a sane default."""
     try:
         parsed = int(float(value))
         return parsed if parsed > 0 else default
@@ -52,6 +54,7 @@ def _coerce_int(value: Any, default: int) -> int:
 
 
 def _coerce_float(value: Any, default: float) -> float:
+    """Float parser that never raises for invalid tenant settings."""
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -59,6 +62,7 @@ def _coerce_float(value: Any, default: float) -> float:
 
 
 async def load_runtime_config(account_id: int) -> Dict[str, Any]:
+    """Fetch and validate the omnichannel + LLM params for a tenant."""
     config = await get_params_by_omnichannel_id(account_id)
     if not config:
         raise RuntimeError(f"No tenant configuration found for omnichannel id {account_id}")
@@ -66,6 +70,7 @@ async def load_runtime_config(account_id: int) -> Dict[str, Any]:
 
 
 def configure_llm_from_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Populate llama-index global Settings for the tenant's chosen models."""
     llm_params = _parse_params(config.get("llm_params"))
     provider = (config.get("llm_name") or llm_params.get("provider") or "openai").lower()
     api_key = config.get("llm_api_key") or llm_params.get("api_key") or os.getenv("OPENAI_API_KEY")
@@ -94,6 +99,7 @@ def _resolve_embed_dim(embed_model: str) -> int:
 
 
 def _tenant_query_customizer(tenant_id: int):
+    """Return a SQLAlchemy hook that scopes every vector query to one tenant."""
     def _customize(stmt, table, **kwargs):
         return stmt.where(table.metadata_["tenant_id"].astext == str(tenant_id))
 
@@ -105,6 +111,7 @@ def _vector_store_from_config(
     llm_params: Dict[str, Any],
     embed_model: str,
 ) -> PGVectorStore:
+    """Instantiate PGVector using the shared table + tenant-specific filters."""
     table_name = SHARED_VECTOR_TABLE
     schema_name = llm_params.get("rag_schema_name") or "public"
     embed_dim = _resolve_embed_dim(embed_model)
@@ -127,6 +134,7 @@ async def get_query_engine(
     runtime_config: Optional[Dict[str, Any]] = None,
     llm_params: Optional[Dict[str, Any]] = None,
 ) -> RetrieverQueryEngine:
+    """Assemble the end-to-end retriever (fusion + rerank + synthesizer)."""
     config = runtime_config or await load_runtime_config(account_id)
     runtime_llm_params = llm_params or configure_llm_from_config(config)
 

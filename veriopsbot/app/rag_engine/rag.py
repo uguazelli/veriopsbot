@@ -16,6 +16,9 @@ from .rag_memory import MemoryState
 
 logger = logging.getLogger("veriops.rag")
 
+SMALL_TALK_PROMPT = "You are a warm, professional assistant. Reply concisely in the same language as the user."
+SMALL_TALK_REPLAY = "Hello! How can I assist you today?"
+
 
 def initial_state() -> MemoryState:
     return MemoryState()
@@ -39,6 +42,7 @@ async def handle_input(
         "Starting intent classification",
         extra={"event": "rag_intent_start", "payload": {"tenant_id": tenant_id}},
     )
+    # Decide early whether the turn needs retrieval or some cheaper path.
     intent, reason = await classify_user_message(llm, state, user_message)
     logger.info(
         "Intent classified",
@@ -53,10 +57,7 @@ async def handle_input(
     if intent == "smalltalk":
         reply: str
         if llm:
-            system_prompt = llm_params.get(
-                "smalltalk_system_prompt",
-                "You are a warm, professional assistant. Reply concisely in the same language as the user.",
-            )
+            system_prompt = SMALL_TALK_PROMPT
             user_prompt = (
                 f"Conversation to date:\n{state.transcript() or '(no history)'}\n\n"
                 f"Most recent user message:\n{user_message}"
@@ -64,21 +65,16 @@ async def handle_input(
             try:
                 reply = await chat_completion(llm, user_prompt, system_prompt=system_prompt)
             except Exception:
-                reply = llm_params.get(
-                    "smalltalk_reply",
-                    "Hello! How can I assist you today?",
-                )
+                reply = SMALL_TALK_REPLAY
         else:
-            reply = llm_params.get(
-                "smalltalk_reply",
-                "Hello! How can I assist you today?",
-            )
+            reply = SMALL_TALK_REPLAY
         state.remember("assistant", reply)
         return state, reply, "smalltalk"
 
     if intent == "handoff":
         return state, "human_agent", "handoff"
 
+    # Build a tenant-scoped query engine only when we actually need RAG.
     query_engine = await get_query_engine(
         account_id=int(config.get("omnichannel_id", tenant_id)),
         tenant_id=state.tenant_id,
@@ -86,6 +82,7 @@ async def handle_input(
         llm_params=llm_params,
     )
 
+    # Run retrieval/synthesis and keep the raw answer + supporting nodes.
     response = query_engine.query(user_message)
     retrieved_nodes = list(getattr(response, "source_nodes", []) or [])
     raw_answer = (getattr(response, "response", None) or str(response or "")).strip()

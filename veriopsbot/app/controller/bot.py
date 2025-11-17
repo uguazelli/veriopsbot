@@ -15,7 +15,6 @@ from app.rag_engine.rag import handle_input, initial_state
 
 
 SESSIONS: dict[str, dict] = {}
-DEFAULT_HANDOFF_PRIORITY = "high"
 
 logger = logging.getLogger("veriops.bot")
 
@@ -191,15 +190,9 @@ async def process_bot_request(data: dict):
             extra={"event": "bot_usage_error", "payload": {"tenant_id": tenant_id}},
         )
 
-    handoff_public_reply = llm_params.get(
-        "handoff_public_reply",
-        "Ok, please hold on while I connect you with a human agent.",
-    )
-    handoff_private_note = llm_params.get(
-        "handoff_private_note",
-        "Bot routed the conversation for human follow-up.",
-    )
-    handoff_priority = llm_params.get("handoff_priority", DEFAULT_HANDOFF_PRIORITY)
+    handoff_public_reply = llm_params.get("handoff_public_reply")
+    handoff_private_note = llm_params.get("handoff_private_note" )
+    handoff_priority = llm_params.get("handoff_priority")
 
     state = SESSIONS.get(user_id) or initial_state()
     logger.info(

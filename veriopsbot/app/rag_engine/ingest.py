@@ -64,6 +64,7 @@ class IngestConfig:
 
 
 def _tenant_metadata_filter(tenant_id: int) -> MetadataFilters:
+    """Build a PGVector filter that keeps only embeddings for one tenant."""
     return MetadataFilters(
         filters=[
             MetadataFilter(
@@ -76,6 +77,7 @@ def _tenant_metadata_filter(tenant_id: int) -> MetadataFilters:
 
 
 def _parse_params(raw: object) -> Dict[str, object]:
+    """Allow tenant config JSON to be stored as dicts or strings."""
     if isinstance(raw, dict):
         return raw
     if isinstance(raw, str):
@@ -90,6 +92,7 @@ def _parse_params(raw: object) -> Dict[str, object]:
 
 
 def _docs_directory(folder_name: str) -> Path:
+    """Resolve and validate the ingest source folder."""
     folder = STORAGE_ROOT / Path(folder_name).name
     if not folder.exists() or not folder.is_dir():
         raise IngestError(f"Folder '{folder_name}' was not found under {STORAGE_ROOT}.")
@@ -97,6 +100,7 @@ def _docs_directory(folder_name: str) -> Path:
 
 
 def _select_embedder(config: IngestConfig):
+    """Pick the correct embedding client for the configured provider."""
     provider = config.provider.lower()
 
     if provider == "openai":
@@ -113,6 +117,7 @@ def _select_embedder(config: IngestConfig):
 
 
 def _embed_dimensions(model_name: str, embedder) -> int:
+    """Figure out the embedding width for table creation and validation."""
     if model_name in EMBED_DIMENSIONS:
         return EMBED_DIMENSIONS[model_name]
     sample = embedder.get_text_embedding("dimension probe")
@@ -120,6 +125,7 @@ def _embed_dimensions(model_name: str, embedder) -> int:
 
 
 def _ingest_sync(config: IngestConfig) -> int:
+    """Blocking portion that reads files and upserts them into PGVector."""
     docs_dir = _docs_directory(config.folder_name)
 
     embedder, embed_model = _select_embedder(config)
@@ -163,6 +169,7 @@ async def ingest_documents(
     *,
     embed_model: str | None = None,
 ) -> tuple[int, str, str]:
+    """Public entry-point used by the API to run an ingest job."""
     tenant_config = await get_params_by_tenant_id(tenant_id)
     if not tenant_config:
         raise IngestError(f"No tenant configuration found for id {tenant_id}.")

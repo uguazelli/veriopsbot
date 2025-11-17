@@ -149,6 +149,9 @@ async def bot_endpoint(request: Request, background_tasks: BackgroundTasks):
     background_tasks.add_task(_run_bot_background, data)
     logger.info(
         "Bot request queued",
-        extra={"event": "bot_request_queued", "payload": {"conversation_id": (data.get("conversation") or {}).get("id")}},
+        extra={
+            "event": "bot_request_queued",
+            "payload": {"conversation_id": (data.get("conversation") or {}).get("id")},
+        },
     )
     return {"message": "Bot request queued"}
