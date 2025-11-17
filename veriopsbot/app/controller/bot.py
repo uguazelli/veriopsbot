@@ -1,6 +1,7 @@
 """Chatwoot bot controller logic."""
 
 from datetime import date
+import logging
 
 import httpx
 
@@ -16,6 +17,8 @@ from app.rag_engine.rag import handle_input, initial_state
 SESSIONS: dict[str, dict] = {}
 DEFAULT_HANDOFF_PRIORITY = "high"
 
+logger = logging.getLogger("veriops.bot")
+
 
 async def process_bot_request(data: dict):
     convo = data.get("conversation", {}) or {}
@@ -23,19 +26,34 @@ async def process_bot_request(data: dict):
     assignee_id = assignee_id.get("id")
 
     if assignee_id:
-        print("🤖 Conversation is assigned to someone")
+        logger.info(
+            "Conversation already assigned",
+            extra={
+                "event": "bot_skip",
+                "payload": {"reason": "assigned", "assignee_id": assignee_id},
+            },
+        )
         return {"message": "Conversation is assigned to someone"}
 
     if data.get("event") != "message_created":
-        print("🤖 Not a message creation event")
+        logger.info(
+            "Skipping event",
+            extra={"event": "bot_skip", "payload": {"reason": "not_message_created"}},
+        )
         return {"message": "Not a message creation event"}
 
     if data.get("message_type") != "incoming":
-        print("🤖 Not an incoming message")
+        logger.info(
+            "Skipping event",
+            extra={"event": "bot_skip", "payload": {"reason": "not_incoming"}},
+        )
         return {"message": "Not an incoming message"}
 
     if "sender" not in data:
-        print("🤖 No sender detected")
+        logger.warning(
+            "Incoming payload missing sender",
+            extra={"event": "bot_skip", "payload": {"reason": "no_sender"}},
+        )
         return {"message": "No sender detected"}
 
     account_id = int(data["account"]["id"])
@@ -44,10 +62,22 @@ async def process_bot_request(data: dict):
     text = data.get("content", "") or ""
 
     cfg = await get_params_by_omnichannel_id(account_id)
-    print("🤖 Tenant configuration for omnichannel id", account_id, cfg)
+    logger.info(
+        "Configuration lookup complete",
+        extra={
+            "event": "tenant_config_lookup",
+            "payload": {"account_id": account_id, "found": bool(cfg)},
+        },
+    )
 
     if not cfg:
-        print("🤖 No tenant configuration found for omnichannel id", account_id)
+        logger.error(
+            "No tenant configuration found",
+            extra={
+                "event": "tenant_config_missing",
+                "payload": {"account_id": account_id},
+            },
+        )
         return {"message": "No tenant configuration found for omnichannel id"}
 
     tenant_id = int(cfg.get("id", account_id))
@@ -62,16 +92,22 @@ async def process_bot_request(data: dict):
     chatwoot_bot_access_token = omnichannel_params.get("chatwoot_bot_access_token")
 
     if not chatwoot_api_url:
-        print(
-            f"⚠️ Chatwoot API URL not configured for tenant {tenant_id} "
-            f"(omnichannel {account_id})"
+        logger.error(
+            "Chatwoot API URL missing",
+            extra={
+                "event": "chatwoot_config_error",
+                "payload": {"tenant_id": tenant_id, "account_id": account_id},
+            },
         )
         return {"message": "Chatwoot API URL not configured"}
 
     if not chatwoot_bot_access_token:
-        print(
-            f"⚠️ Chatwoot access token not configured for tenant {tenant_id} "
-            f"(omnichannel {account_id})"
+        logger.error(
+            "Chatwoot bot access token missing",
+            extra={
+                "event": "chatwoot_config_error",
+                "payload": {"tenant_id": tenant_id, "account_id": account_id},
+            },
         )
         return {"message": "Chatwoot access token not configured"}
 
@@ -80,9 +116,15 @@ async def process_bot_request(data: dict):
             monthly_limit = int(monthly_limit_raw)
         except (TypeError, ValueError):
             monthly_limit = None
-            print(
-                f"⚠️ Invalid monthly limit configured for tenant {tenant_id}: "
-                f"{monthly_limit_raw}"
+            logger.warning(
+                "Invalid monthly limit configured",
+                extra={
+                    "event": "bot_limit_invalid",
+                    "payload": {
+                        "tenant_id": tenant_id,
+                        "raw_value": monthly_limit_raw,
+                    },
+                },
             )
 
     if monthly_limit is not None and monthly_limit > 0:
@@ -91,14 +133,24 @@ async def process_bot_request(data: dict):
         try:
             monthly_usage = await get_bot_request_total(tenant_id, start_of_month, today)
             bot_usage_month = monthly_usage
-            print(
-                f"📊 Bot usage this month for tenant {tenant_id}: "
-                f"{monthly_usage}/{monthly_limit}"
+            logger.info(
+                "Monthly usage fetched",
+                extra={
+                    "event": "bot_usage_month",
+                    "payload": {
+                        "tenant_id": tenant_id,
+                        "usage": monthly_usage,
+                        "limit": monthly_limit,
+                    },
+                },
             )
         except Exception as exc:
             monthly_usage = None
             bot_usage_month = None
-            print(f"⚠️ Failed to fetch monthly usage for tenant {tenant_id}: {exc}")
+            logger.exception(
+                "Failed to fetch monthly usage",
+                extra={"event": "bot_usage_error", "payload": {"tenant_id": tenant_id}},
+            )
         else:
             if monthly_usage >= monthly_limit:
                 limit_message = llm_params.get(
@@ -124,11 +176,20 @@ async def process_bot_request(data: dict):
 
     try:
         bot_usage_today = await increment_bot_request_count(tenant_id)
-        print(f"📈 Bot usage for tenant {tenant_id} today: {bot_usage_today}")
+        logger.info(
+            "Bot usage incremented",
+            extra={
+                "event": "bot_usage_today",
+                "payload": {"tenant_id": tenant_id, "count": bot_usage_today},
+            },
+        )
         if bot_usage_month is not None:
             bot_usage_month = bot_usage_month + 1
     except Exception as exc:
-        print(f"⚠️ Failed to record bot usage for tenant {tenant_id}: {exc}")
+        logger.exception(
+            "Failed to record bot usage",
+            extra={"event": "bot_usage_error", "payload": {"tenant_id": tenant_id}},
+        )
 
     handoff_public_reply = llm_params.get(
         "handoff_public_reply",
@@ -141,7 +202,13 @@ async def process_bot_request(data: dict):
     handoff_priority = llm_params.get("handoff_priority", DEFAULT_HANDOFF_PRIORITY)
 
     state = SESSIONS.get(user_id) or initial_state()
-    print("🤖 Handling the input ...")
+    logger.info(
+        "Handling user input",
+        extra={
+            "event": "bot_handle_input",
+            "payload": {"tenant_id": tenant_id, "user_id": user_id},
+        },
+    )
     state, reply, status = await handle_input(
         state,
         text,

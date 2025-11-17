@@ -25,8 +25,6 @@ services:
       CHATWOOT_API_URL: ${CHATWOOT_API_URL:-http://localhost:3000/api/v1}
       # If your bot calls n8n webhooks, expose the base here for convenience:
       N8N_BASE_URL: ${N8N_BASE_URL:-http://localhost:5678}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "8080:8080"
     volumes:
@@ -41,8 +39,6 @@ services:
     image: n8nio/n8n:latest
     container_name: veriopsn8n
     restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "5678:5678"
     env_file:

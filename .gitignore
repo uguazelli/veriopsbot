@@ -18,5 +18,5 @@ wheels/
 .venv
 __pycache__/
 
-
+logs/
 .vscodereplacements.txt

@@ -50,7 +50,10 @@ async def classify_user_message(
     try:
         raw = await chat_completion(llm, user_prompt, system_prompt=system_prompt)
         data = json.loads(raw)
-        print("🤖 LLM intent classification:", data)
+        _LOGGER.info(
+            "LLM intent classification",
+            extra={"event": "rag_intent_llm", "payload": data},
+        )
         intent = data.get("intent", "rag").lower()
         if intent not in {"smalltalk", "rag", "handoff"}:
             intent = "rag"

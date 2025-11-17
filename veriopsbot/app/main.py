@@ -1,12 +1,17 @@
 from pathlib import Path
+import json
+import logging
 
 from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.staticfiles import StaticFiles
-import json
 
 from .controller import rag_docs, rag_ingest, webhooks
 from .controller import bot as bot_controller
+from .logging_config import configure_logging
 from .web.views import router as web_router
+
+configure_logging()
+logger = logging.getLogger("veriops.api")
 
 app = FastAPI()
 
@@ -20,7 +25,15 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 async def log_request_payload(request: Request, call_next):
     try:
         # 🚀 Incoming request
-        print(f"\n🟢 [REQ] {request.method} {request.url.path} qs={dict(request.query_params)}", flush=True)
+        logger.info(
+            "[REQ] %s %s",
+            request.method,
+            request.url.path,
+            extra={
+                "event": "request",
+                "payload": {"query": dict(request.query_params)},
+            },
+        )
 
         # Read body (safe, Starlette caches it)
         body = await request.body()
@@ -31,7 +44,10 @@ async def log_request_payload(request: Request, call_next):
             return await call_next(request)
 
         if ctype.startswith("multipart/"):
-            print("📂 [BODY] multipart/form-data omitted", flush=True)
+            logger.info(
+                "[BODY] multipart/form-data omitted",
+                extra={"event": "request_body", "payload": {"content_type": ctype}},
+            )
         else:
             preview = body[:4096]
             try:
@@ -42,28 +58,44 @@ async def log_request_payload(request: Request, call_next):
             if text.strip():
                 try:
                     parsed = json.loads(text)
-                    print("🧩 [JSON BODY]:", json.dumps(parsed, indent=2)[:4096], flush=True)
+                    logger.info(
+                        "[JSON BODY] %s",
+                        json.dumps(parsed, indent=2)[:4096],
+                        extra={"event": "request_body"},
+                    )
                 except Exception:
-                    print(f"📄 [RAW BODY]: {text[:4096]}", flush=True)
+                    logger.info(
+                        "[RAW BODY] %s",
+                        text[:4096],
+                        extra={"event": "request_body"},
+                    )
             else:
-                print("⚪️ [BODY] empty", flush=True)
+                logger.info("[BODY] empty", extra={"event": "request_body"})
 
         # Pass to route
         response = await call_next(request)
 
         # ✅ Response summary
-        print(f"🔵 [RES] {response.status_code} {request.url.path}", flush=True)
+        logger.info(
+            "[RES] %s %s",
+            response.status_code,
+            request.url.path,
+            extra={
+                "event": "response",
+                "payload": {"status": response.status_code},
+            },
+        )
 
         return response
 
     except Exception as e:
-        print(f"❌ [ERROR] Middleware failed: {e}", flush=True)
+        logger.exception("Middleware failed", extra={"event": "middleware_error"})
         return await call_next(request)
 
 
 @app.get("/health")
 async def health():
-    print("🤖 Health check", flush=True)
+    logger.info("Health check", extra={"event": "health"})
     return {"message": "Status OK"}
 
 

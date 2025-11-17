@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
 import secrets
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlencode
 
+import anyio
 import bcrypt
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.controller import rag_docs, rag_ingest
+from app.log_reader import get_recent_logs
 from app.db.repository import (
     create_user,
     get_params_by_tenant_id,
@@ -31,6 +35,8 @@ router = APIRouter()
 templates = Jinja2Templates(
     directory=str(Path(__file__).resolve().parent.parent / "templates")
 )
+
+logger = logging.getLogger("veriops.web")
 
 SESSION_COOKIE_NAME = "session_token"
 SESSION_MAX_AGE = 60 * 60 * 8  # 8 hours
@@ -59,6 +65,8 @@ CROSS_ENCODER_OPTIONS: list[str] = [
     # "cross-encoder/ms-marco-electra-base",
     # "cross-encoder/stsb-roberta-base",
 ]
+LOG_LEVEL_OPTIONS: list[str] = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]
+DEFAULT_LOG_LIMIT = 200
 
 # =========================
 # 🔎 Debug helpers (safe)
@@ -104,11 +112,36 @@ def _log(event: str, **fields: Any) -> None:
         "ingest": "🧪",
     }.get(event, "🔹")
     payload = {k: _safe_value(k, v) for k, v in fields.items()}
+    message = f"{prefix} {event.upper()} {json.dumps(payload, ensure_ascii=False)}"
+    level = {
+        "error": logging.ERROR,
+        "warn": logging.WARNING,
+        "db": logging.INFO,
+        "enter": logging.DEBUG,
+        "exit": logging.DEBUG,
+    }.get(event, logging.INFO)
+    logger.log(level, message, extra={"event": event, "payload": payload})
+
+
+def _parse_datetime_param(value: str | None) -> datetime | None:
+    if not value:
+        return None
     try:
-        print(f"{prefix} {event.upper()} {json.dumps(payload, ensure_ascii=False)}", flush=True)
-    except Exception:
-        # fallback if something is not JSON-serializable
-        print(f"{prefix} {event.upper()} {payload}", flush=True)
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo:
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
+def _clamp_log_limit(raw_value: str | None) -> int:
+    try:
+        value = int(raw_value) if raw_value is not None else DEFAULT_LOG_LIMIT
+    except (TypeError, ValueError):
+        value = DEFAULT_LOG_LIMIT
+    return max(25, min(value, 500))
+
 
 # =========================
 # Internal helpers (unchanged, with logs)
@@ -815,6 +848,60 @@ def _ensure_admin_session(request: Request) -> Dict[str, Any] | None:
     if not session or not session.get("is_admin"):
         return None
     return session
+
+
+@router.get("/admin/logs", response_class=HTMLResponse)
+async def admin_logs_page(request: Request):
+    session = _ensure_admin_session(request)
+    if not session:
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    params = request.query_params
+    client_id = (params.get("client_id") or "").strip()
+    level_raw = (params.get("level") or "").upper()
+    level = level_raw if level_raw in LOG_LEVEL_OPTIONS else ""
+    event = (params.get("event") or "").strip()
+    start_input = params.get("start") or ""
+    end_input = params.get("end") or ""
+    start_dt = _parse_datetime_param(start_input)
+    end_dt = _parse_datetime_param(end_input)
+    limit = _clamp_log_limit(params.get("limit"))
+
+    def _load_logs() -> list[Dict[str, Any]]:
+        return get_recent_logs(
+            limit=limit,
+            level=level or None,
+            event=event or None,
+            tenant_id=client_id or None,
+            start=start_dt,
+            end=end_dt,
+        )
+
+    try:
+        logs = await anyio.to_thread.run_sync(_load_logs)
+    except Exception as exc:
+        _log("error", route="GET /admin/logs", during="load_logs", error=str(exc))
+        logs = []
+
+    return templates.TemplateResponse(
+        "admin_logs.html",
+        {
+            "request": request,
+            "user_email": session["email"],
+            "is_admin": True,
+            "logs": logs,
+            "logs_count": len(logs),
+            "filters": {
+                "client_id": client_id,
+                "level": level,
+                "event": event,
+                "start": start_input,
+                "end": end_input,
+                "limit": limit,
+            },
+            "level_options": LOG_LEVEL_OPTIONS,
+        },
+    )
 
 
 @router.get("/admin/users", response_class=HTMLResponse)

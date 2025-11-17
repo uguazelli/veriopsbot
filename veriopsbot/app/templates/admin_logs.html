@@ -1,0 +1,100 @@
+{% extends "layout.html" %}
+
+{% block title %}System Logs · VeriOps{% endblock %}
+
+{% block header_actions %}
+<span class="text-white-50 small me-3">{{ user_email }}</span>
+<a href="/settings" class="btn btn-outline-light btn-sm me-2">Settings</a>
+<a href="/admin/users" class="btn btn-outline-light btn-sm me-2">Admin</a>
+<a href="/logout" class="btn btn-outline-light btn-sm">Log out</a>
+{% endblock %}
+
+{% block content %}
+<div class="portal-hero mb-4">
+    <div class="row align-items-center g-4">
+        <div class="col-lg-12">
+            <span class="portal-pill"><i class="bi bi-activity me-1"></i>System Logs</span>
+            <p>Observe what the bot is doing in real time. Filter entries by tenant, severity, or timeframe to zero in on
+                the events you care about.</p>
+        </div>
+    </div>
+</div>
+
+<form method="get" class="portal-card portal-card--glass logs-filter-form mb-4">
+    <div class="row g-3">
+        <div class="col-md-4">
+            <label class="form-label text-uppercase small fw-semibold text-muted">Client / Tenant ID</label>
+            <input type="text" name="client_id" value="{{ filters.client_id }}" class="form-control portal-input"
+                placeholder="e.g. 42">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label text-uppercase small fw-semibold text-muted">Log level</label>
+            <select name="level" class="form-select portal-input">
+                <option value="">All levels</option>
+                {% for level in level_options %}
+                <option value="{{ level }}" {% if filters.level==level %}selected{% endif %}>{{ level }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-5">
+            <label class="form-label text-uppercase small fw-semibold text-muted">Event tag (optional)</label>
+            <input type="text" name="event" value="{{ filters.event }}" class="form-control portal-input"
+                placeholder="e.g. bot_usage_today">
+        </div>
+        <div class="col-md-4">
+            <label class="form-label text-uppercase small fw-semibold text-muted">Start (date & time)</label>
+            <input type="datetime-local" name="start" value="{{ filters.start }}" class="form-control portal-input">
+        </div>
+        <div class="col-md-4">
+            <label class="form-label text-uppercase small fw-semibold text-muted">End (date & time)</label>
+            <input type="datetime-local" name="end" value="{{ filters.end }}" class="form-control portal-input">
+        </div>
+        <div class="col-md-2">
+            <label class="form-label text-uppercase small fw-semibold text-muted">Max entries</label>
+            <input type="number" name="limit" min="25" max="500" step="25" value="{{ filters.limit }}"
+                class="form-control portal-input">
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+            <button type="submit" class="btn btn-gradient w-100">Apply filters</button>
+        </div>
+    </div>
+</form>
+
+<div class="portal-card system-logs-card">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <p class="text-uppercase small fw-semibold text-muted mb-1">Log stream</p>
+            <h3 class="mb-0">{{ logs_count }} entries shown</h3>
+        </div>
+        <span class="badge bg-light text-dark">Limit {{ filters.limit }}</span>
+    </div>
+
+    {% if logs %}
+    <div class="system-logs-list">
+        {% for log in logs %}
+        <div class="system-log-entry">
+            <div class="system-log-line">
+                <span class="system-log-timestamp">{{ log.timestamp or "—" }}</span>
+                <span class="system-log-level system-log-level-{{ log.level|default('INFO')|lower }}">{{ log.level }}</span>
+            </div>
+            <div class="system-log-message">{{ log.message }}</div>
+            <div class="system-log-meta">
+                <span class="system-log-source">{{ log.logger }}</span>
+                {% if log.event %}
+                <span class="system-log-event">#{{ log.event }}</span>
+                {% endif %}
+            </div>
+            {% if log.payload %}
+            <details class="system-log-context">
+                <summary>Context</summary>
+                <pre>{{ log.payload | tojson(indent=2) }}</pre>
+            </details>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">No log entries match the selected filters.</p>
+    {% endif %}
+</div>
+{% endblock %}

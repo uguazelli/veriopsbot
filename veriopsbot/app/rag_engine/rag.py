@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
+import logging
 
 from llama_index.core import Settings
 from llama_index.core.schema import NodeWithScore
@@ -11,6 +12,9 @@ from .helpers import configure_llm_from_config, get_query_engine
 from .rag_handleInput import classify_user_message
 from .rag_llm import chat_completion
 from .rag_memory import MemoryState
+
+
+logger = logging.getLogger("veriops.rag")
 
 
 def initial_state() -> MemoryState:
@@ -31,9 +35,18 @@ async def handle_input(
         state.tenant_id = tenant_id
 
     llm = getattr(Settings, "llm", None)
-    print("🤖 Starting Intent classification...")
+    logger.info(
+        "Starting intent classification",
+        extra={"event": "rag_intent_start", "payload": {"tenant_id": tenant_id}},
+    )
     intent, reason = await classify_user_message(llm, state, user_message)
-    print(f"🤖 Intent: {intent}, Reason: {reason}")
+    logger.info(
+        "Intent classified",
+        extra={
+            "event": "rag_intent_result",
+            "payload": {"intent": intent, "reason": reason},
+        },
+    )
 
     state.remember("user", user_message)
 
@@ -77,17 +90,35 @@ async def handle_input(
     retrieved_nodes = list(getattr(response, "source_nodes", []) or [])
     raw_answer = (getattr(response, "response", None) or str(response or "")).strip()
 
-    print("🔎 RAG raw answer:", raw_answer)
+    logger.info(
+        "RAG raw answer",
+        extra={"event": "rag_raw_answer", "payload": {"answer": raw_answer}},
+    )
     if retrieved_nodes:
-        print("📄 Retrieved nodes:")
+        logger.info(
+            "Retrieved nodes",
+            extra={
+                "event": "rag_nodes",
+                "payload": {"count": len(retrieved_nodes)},
+            },
+        )
         for idx, node in enumerate(retrieved_nodes, start=1):
             try:
                 snippet = node.node.get_content()
             except AttributeError:
                 snippet = str(node)
-            print(f"  {idx}. score={getattr(node, 'score', 'n/a')}: {snippet[:200]}...")
+            logger.debug(
+                "Node %s score=%s snippet=%s",
+                idx,
+                getattr(node, "score", "n/a"),
+                snippet[:200],
+                extra={"event": "rag_node_detail"},
+            )
     else:
-        print("📄 Retrieved nodes: none")
+        logger.info(
+            "No retrieved nodes",
+            extra={"event": "rag_nodes", "payload": {"count": 0}},
+        )
 
     reply = await _compose_conversational_answer(
         llm=llm,
