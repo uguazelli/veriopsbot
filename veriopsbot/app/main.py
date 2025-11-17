@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 import logging
 
-from fastapi import FastAPI, File, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Request, UploadFile
 from fastapi.staticfiles import StaticFiles
 
 from .controller import rag_docs, rag_ingest, webhooks
@@ -136,7 +136,19 @@ async def twenty_webhook(request: Request):
     return webhooks.process_twenty_webhook(payload)
 
 
+async def _run_bot_background(data: dict):
+    try:
+        await bot_controller.process_bot_request(data)
+    except Exception:
+        logger.exception("Background bot processing failed", extra={"event": "bot_background_error"})
+
+
 @app.post("/bot")
-async def bot_endpoint(request: Request):
+async def bot_endpoint(request: Request, background_tasks: BackgroundTasks):
     data = await request.json()
-    return await bot_controller.process_bot_request(data)
+    background_tasks.add_task(_run_bot_background, data)
+    logger.info(
+        "Bot request queued",
+        extra={"event": "bot_request_queued", "payload": {"conversation_id": (data.get("conversation") or {}).get("id")}},
+    )
+    return {"message": "Bot request queued"}
