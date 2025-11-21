@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.controller import rag_docs, rag_ingest
-from app.log_reader import get_recent_logs
+from app.logging.log_reader import get_recent_logs
 from app.db.repository import (
     create_user,
     get_params_by_tenant_id,
@@ -59,11 +59,6 @@ EMBED_MODEL_OPTIONS: list[str] = [
     # "text-embedding-3-large",
     # "text-embedding-ada-002",
     # "models/text-embedding-004",
-]
-CROSS_ENCODER_OPTIONS: list[str] = [
-    "cross-encoder/ms-marco-MiniLM-L-6-v2",
-    # "cross-encoder/ms-marco-electra-base",
-    # "cross-encoder/stsb-roberta-base",
 ]
 LOG_LEVEL_OPTIONS: list[str] = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]
 DEFAULT_LOG_LIMIT = 200
@@ -268,7 +263,6 @@ def _settings_template_context(
         "model_options": MODEL_OPTIONS,
         "handoff_priorities": HANDOFF_PRIORITIES,
         "embed_options": EMBED_MODEL_OPTIONS,
-        "cross_encoder_options": CROSS_ENCODER_OPTIONS,
     }
     context.update(_build_documents_context(session))
     return context
@@ -329,10 +323,6 @@ def _build_form_values(
         "llm_handoff_public_reply": pick(
             "llm_handoff_public_reply",
             llm_params.get("handoff_public_reply"),
-        ),
-        "llm_rag_cross_encoder_model": pick(
-            "llm_rag_cross_encoder_model",
-            llm_params.get("rag_cross_encoder_model"),
         ),
         "llm_monthly_limit": pick(
             "llm_monthly_limit",
@@ -765,11 +755,6 @@ async def update_settings(request: Request):
         updated_llm_params,
         "handoff_public_reply",
         form_dict.get("llm_handoff_public_reply"),
-    )
-    set_or_pop(
-        updated_llm_params,
-        "rag_cross_encoder_model",
-        form_dict.get("llm_rag_cross_encoder_model"),
     )
 
     if top_k is None:

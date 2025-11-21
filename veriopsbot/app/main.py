@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .controller import rag_docs, rag_ingest, webhooks
 from .controller import bot as bot_controller
-from .logging_config import configure_logging
+from .logging.logging_config import configure_logging
 from .web.views import router as web_router
 
 configure_logging()

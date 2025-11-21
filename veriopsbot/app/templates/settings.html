@@ -53,7 +53,7 @@
     </div>
     <div class="portal-stat-card">
         <span class="portal-stat-label"><i class="bi bi-diagram-2 me-2 text-primary"></i>Embedding model</span>
-        <span class="portal-stat-value">{{ form_values.llm_openai_embed_model or "—"
+        <span class="portal-stat-value">{{ form_values.llm_openai_embed_model or "llm_openai_embed_model"
             }}</span>
         <span class="portal-stat-hint">Used for RAG ingestion.</span>
     </div>
@@ -228,43 +228,7 @@
                             </select>
                         </div>
                     </div>
-                    <!-- {% set embed_current = form_values.llm_openai_embed_model %}
-                    <div class="form-group row mb-3 align-items-center">
-                        <label for="llm_openai_embed_model" class="col-md-4 col-form-label">Embedding model</label>
-                        <div class="col-md-8">
-                            <select id="llm_openai_embed_model" name="llm_openai_embed_model"
-                                class="form-control portal-input">
-                                <option value="" {% if not embed_current %}selected{% endif %}></option>
-                                {% for option in embed_options %}
-                                <option value="{{ option }}" {% if option==embed_current %}selected{% endif %}>
-                                    {{ option }}
-                                </option>
-                                {% endfor %}
-                                {% if embed_current and embed_current not in embed_options %}
-                                <option value="{{ embed_current }}" selected>{{ embed_current }}</option>
-                                {% endif %}
-                            </select>
-                        </div>
-                    </div>
-                    {% set cross_current = form_values.llm_rag_cross_encoder_model %}
-                    <div class="form-group row mb-3 align-items-center">
-                        <label for="llm_rag_cross_encoder_model" class="col-md-4 col-form-label">Cross encoder
-                            model</label>
-                        <div class="col-md-8">
-                            <select id="llm_rag_cross_encoder_model" name="llm_rag_cross_encoder_model"
-                                class="form-control portal-input">
-                                <option value="" {% if not cross_current %}selected{% endif %}></option>
-                                {% for option in cross_encoder_options %}
-                                <option value="{{ option }}" {% if option==cross_current %}selected{% endif %}>
-                                    {{ option }}
-                                </option>
-                                {% endfor %}
-                                {% if cross_current and cross_current not in cross_encoder_options %}
-                                <option value="{{ cross_current }}" selected>{{ cross_current }}</option>
-                                {% endif %}
-                            </select>
-                        </div>
-                    </div>
+                    {# Embedding model selector hidden; summarized in the stats card instead. #}
                     <div class="form-group row mb-3 align-items-center">
                         <label for="llm_monthly_limit" class="col-md-4 col-form-label">Monthly LLM request limit</label>
                         <div class="col-md-8">
@@ -272,7 +236,7 @@
                                 value="{{ form_values.llm_monthly_limit }}" placeholder="Leave blank for no limit"
                                 class="form-control portal-input">
                         </div>
-                    </div> -->
+                    </div>
                     <div class="form-group row mb-3 align-items-start">
                         <label for="llm_handoff_public_reply" class="col-md-4 col-form-label">
                             <span class="settings-info-label">
@@ -544,8 +508,8 @@
         <div id="collapse-account" class="accordion-collapse collapse" aria-labelledby="heading-account"
             data-bs-parent="#settingsAccordion">
             <div class="accordion-body settings-panel-body">
-                <form method="post" action="/settings/account" class="d-grid gap-3"
-                    data-loading-modal="true" autocomplete="off">
+                <form method="post" action="/settings/account" class="d-grid gap-3" data-loading-modal="true"
+                    autocomplete="off">
                     <div class="form-group row mb-3 align-items-center">
                         <label class="col-md-4 col-form-label">Current email</label>
                         <div class="col-md-8">
