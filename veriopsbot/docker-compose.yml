@@ -36,7 +36,10 @@ services:
     stdin_open: true
     tty: true
     # No DB dependency anymore
+    # No DB dependency anymore
     depends_on: []
+    networks:
+      - veridata.network
 
   n8n:
     image: n8nio/n8n:latest
@@ -63,13 +66,19 @@ services:
 
       # --- Tell n8n to use Postgres ---
       DB_TYPE: postgres
-      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_HOST: veridata.network.postgres
       DB_POSTGRESDB_PORT: 5432
       DB_POSTGRESDB_DATABASE: n8n
       DB_POSTGRESDB_USER: n8n_user
       DB_POSTGRESDB_PASSWORD: strong_password_here
     volumes:
       - n8n_data:/home/node/.n8n
+    networks:
+      - veridata.network
 
 volumes:
   n8n_data:
+
+networks:
+  veridata.network:
+    external: true

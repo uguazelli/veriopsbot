@@ -21,6 +21,8 @@ services:
     entrypoint: docker/entrypoints/rails.sh
     command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
     restart: always
+    networks:
+      - veridata.network
 
   sidekiq:
     <<: *base
@@ -33,6 +35,8 @@ services:
       - INSTALLATION_ENV=docker
     command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
     restart: always
+    networks:
+      - veridata.network
 
   # postgres:
   #   image: pgvector/pgvector:pg16
@@ -55,8 +59,14 @@ services:
       - redis_data:/data
     ports:
       - "127.0.0.1:6379:6379"
+    networks:
+      - veridata.network
 
 volumes:
   storage_data:
   # postgres_data:
   redis_data:
+
+networks:
+  veridata.network:
+    external: true

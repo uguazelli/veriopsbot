@@ -52,6 +52,10 @@ Leave the rest at their defaults unless you need social logins, S3 storage, or o
    cd VeriOps
    ```
 2. **Configure env files** – Update `chatwoot/.env` and `veriopsbot/.env` with your Postgres creds, URLs, and secrets.
+Create a shared network for the containers to communicate
+```bash
+docker network create veridata.network
+```
 3. **Start Chatwoot**
    ```bash
    cd chatwoot
@@ -66,6 +70,20 @@ Leave the rest at their defaults unless you need social logins, S3 storage, or o
    docker compose up --build
    ```
    FastAPI runs at `http://localhost:8080`; n8n lives at `http://localhost:5678`.
+
+## Set DB
+
+```sql
+INSERT INTO tenants ( email, omnichannel_id, crm_id)
+VALUES ('admin@veridatapro.com', 1, 1);
+```
+### After register set as admin
+```sql
+UPDATE veriops_users
+SET is_admin = true
+WHERE email = 'admin@veridatapro.com'
+```
+
 
 ## Handy commands
 

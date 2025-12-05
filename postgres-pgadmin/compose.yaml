@@ -3,6 +3,7 @@ name: postgres-pgadmin
 services:
   postgres:
     image: pgvector/pgvector:pg18
+    container_name: veridata.network.postgres
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -12,17 +13,38 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
+    networks:
+      - veridata.network
 
-  # pgadmin:
-  #   image: dpage/pgadmin4:latest
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "${PGADMIN_LISTEN_PORT}:80"
+    depends_on:
+      - postgres
+    networks:
+      - veridata.network
+
+  # cloudbeaver:
+  #   image: dbeaver/cloudbeaver:latest
+  #   container_name: veridata.network.cloudbeaver
   #   restart: always
-  #   environment:
-  #     PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
-  #     PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
   #   ports:
-  #     - "${PGADMIN_LISTEN_PORT}:80"
+  #     - "${CLOUDBEAVER_LISTEN_PORT}:8978"
+  #   volumes:
+  #     - /var/cloudbeaver/workspace:/opt/cloudbeaver/workspace
   #   depends_on:
   #     - postgres
+  #   networks:
+  #     - veridata.network
 
 volumes:
   postgres_data:
+
+networks:
+  veridata.network:
+    external: true
