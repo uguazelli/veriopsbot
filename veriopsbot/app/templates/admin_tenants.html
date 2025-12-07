@@ -1,0 +1,51 @@
+{% extends "layout.html" %}
+
+{% block title %}Admin · Tenants · VeriOps{% endblock %}
+
+{% block header %}{% endblock %}
+
+{% block header_actions %}
+<span class="text-white-50 small me-3">{{ user_email }}</span>
+<a href="/settings" class="btn btn-outline-light btn-sm me-2">Settings</a>
+<a href="/logout" class="btn btn-outline-light btn-sm">Log out</a>
+{% endblock %}
+
+{% block content %}
+<div class="portal-hero mb-4">
+    <div class="row align-items-center g-4">
+        <div class="col-lg-12">
+            <span class="portal-pill"><i class="bi bi-people me-1"></i>Tenants</span>
+            <p>Manage all tenants in the system. Select a tenant to configure their LLM, CRM, and Omnichannel settings.</p>
+        </div>
+    </div>
+</div>
+
+<div class="portal-card portal-table">
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead>
+                <tr>
+                    <th scope="col">ID</th>
+                    <th scope="col">Email</th>
+                    <th scope="col">Last Modified</th>
+                    <th scope="col" class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="table-group-divider">
+                {% for tenant in tenants %}
+                <tr>
+                    <td>{{ tenant.id }}</td>
+                    <td class="fw-semibold">{{ tenant.email or "—" }}</td>
+                    <td>{{ tenant.modified_at.strftime('%Y-%m-%d %H:%M') if tenant.modified_at else "—" }}</td>
+                    <td class="text-end">
+                        <a href="/admin/tenants/{{ tenant.id }}" class="btn btn-outline-primary btn-sm">
+                            <i class="bi bi-gear me-1"></i>Configure
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

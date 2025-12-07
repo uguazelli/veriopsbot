@@ -284,3 +284,108 @@ async def update_omnichannel_settings(
             conn.commit()
 
     await anyio.to_thread.run_sync(_update)
+
+
+async def list_tenants() -> list[Dict[str, Any]]:
+    """
+    List all tenants.
+    """
+    def _query() -> list[Dict[str, Any]]:
+        with get_connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(queries.SQL_LIST_TENANTS)
+            return cur.fetchall()
+
+    return await anyio.to_thread.run_sync(_query)
+
+
+async def upsert_llm_settings(
+    tenant_id: int,
+    params: Dict[str, Any],
+    llm_id: int | None = None,
+) -> None:
+    """
+    Update LLM settings if llm_id exists, otherwise insert.
+    """
+    def _action() -> None:
+        with get_connection() as conn, conn.cursor() as cur:
+            if llm_id:
+                cur.execute(
+                    queries.SQL_UPDATE_LLM_SETTINGS,
+                    {
+                        "llm_id": llm_id,
+                        "params": json.dumps(params),
+                    },
+                )
+            else:
+                cur.execute(
+                    queries.SQL_INSERT_LLM_SETTINGS,
+                    {
+                        "tenant_id": tenant_id,
+                        "params": json.dumps(params),
+                    },
+                )
+            conn.commit()
+
+    await anyio.to_thread.run_sync(_action)
+
+
+async def upsert_crm_settings(
+    tenant_id: int,
+    params: Dict[str, Any],
+    crm_id: int | None = None,
+) -> None:
+    """
+    Update CRM settings if crm_id exists, otherwise insert.
+    """
+    def _action() -> None:
+        with get_connection() as conn, conn.cursor() as cur:
+            if crm_id:
+                cur.execute(
+                    queries.SQL_UPDATE_CRM_SETTINGS,
+                    {
+                        "crm_id": crm_id,
+                        "params": json.dumps(params),
+                    },
+                )
+            else:
+                cur.execute(
+                    queries.SQL_INSERT_CRM_SETTINGS,
+                    {
+                        "tenant_id": tenant_id,
+                        "params": json.dumps(params),
+                    },
+                )
+            conn.commit()
+
+    await anyio.to_thread.run_sync(_action)
+
+
+async def upsert_omnichannel_settings(
+    tenant_id: int,
+    params: Dict[str, Any],
+    omnichannel_id: int | None = None,
+) -> None:
+    """
+    Update Omnichannel settings if omnichannel_id exists, otherwise insert.
+    """
+    def _action() -> None:
+        with get_connection() as conn, conn.cursor() as cur:
+            if omnichannel_id:
+                cur.execute(
+                    queries.SQL_UPDATE_OMNICHANNEL_SETTINGS,
+                    {
+                        "omnichannel_id": omnichannel_id,
+                        "params": json.dumps(params),
+                    },
+                )
+            else:
+                cur.execute(
+                    queries.SQL_INSERT_OMNICHANNEL_SETTINGS,
+                    {
+                        "tenant_id": tenant_id,
+                        "params": json.dumps(params),
+                    },
+                )
+            conn.commit()
+
+    await anyio.to_thread.run_sync(_action)

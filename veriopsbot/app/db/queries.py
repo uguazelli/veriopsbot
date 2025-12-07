@@ -111,3 +111,71 @@ INSERT INTO veriops_users (tenant_id, email, password_hash, is_admin, modified_a
 VALUES (%(tenant_id)s, %(email)s, %(password_hash)s, %(is_admin)s, NOW())
 RETURNING id, tenant_id, email, is_admin
 """
+
+
+SQL_LIST_TENANTS = """
+SELECT t.id, t.email, t.modified_at
+FROM tenants t
+ORDER BY t.id ASC
+"""
+
+
+SQL_UPSERT_LLM_SETTINGS = """
+INSERT INTO llm (tenant_id, params, modified_at)
+VALUES (%(tenant_id)s, %(params)s, NOW())
+ON CONFLICT (id) DO UPDATE
+SET params = EXCLUDED.params,
+    modified_at = NOW()
+"""
+# Note: The above UPSERT on (id) might be wrong if we don't have the ID.
+# But wait, the table definition says:
+# CREATE TABLE public.llm (
+#     id bigint NOT NULL,
+#     tenant_id bigint NOT NULL,
+# ...
+#     ADD CONSTRAINT llm_pkey PRIMARY KEY (id);
+# It doesn't seem to have a unique constraint on tenant_id?
+# Let's check the schema again.
+# The schema shows:
+# CREATE TABLE public.llm (
+#     id bigint NOT NULL,
+#     tenant_id bigint NOT NULL,
+# ...
+#     ADD CONSTRAINT llm_pkey PRIMARY KEY (id);
+# There is NO unique constraint on tenant_id in the provided schema dump for `llm`, `crm`, or `omnichannel`.
+# However, `queries.py` uses `JOIN llm AS l ON l.tenant_id = t.id` which implies 1:1.
+# If I want to UPSERT by tenant_id, I need a unique constraint on tenant_id.
+# Since I cannot easily change the schema right now without migrations (which I can do if needed, but let's see),
+# I should probably check if it exists first, or rely on the fact that we usually look up by tenant_id.
+# Actually, `SQL_GET_PARAMS_BY_TENANT_ID` joins them.
+# If I want to support "Insert if not exists" for a specific tenant, I should probably do an INSERT ... ON CONFLICT (tenant_id) ...
+# BUT only if there is a unique constraint.
+# Let's assume for now I will write a query that tries to UPDATE first, and if 0 rows affected, INSERT.
+# OR, I can use a PL/SQL block or just simple logic in python.
+# Given the user request "INSERT INTO llm ...", they are doing raw inserts.
+# I will implement `upsert` logic in Python repository to be safe if I can't rely on DB constraints.
+# Wait, `SQL_UPDATE_LLM_SETTINGS` uses `WHERE id = %(llm_id)s`.
+# So the current update logic relies on knowing the `llm_id`.
+# When I'm in the admin view for a tenant, I might not know the `llm_id` if it doesn't exist yet.
+# I should probably fetch the tenant's settings first.
+#
+# Let's define the queries to be flexible.
+# I will add queries to Insert specifically.
+
+SQL_INSERT_LLM_SETTINGS = """
+INSERT INTO llm (tenant_id, params, modified_at)
+VALUES (%(tenant_id)s, %(params)s, NOW())
+RETURNING id
+"""
+
+SQL_INSERT_CRM_SETTINGS = """
+INSERT INTO crm (tenant_id, params, modified_at)
+VALUES (%(tenant_id)s, %(params)s, NOW())
+RETURNING id
+"""
+
+SQL_INSERT_OMNICHANNEL_SETTINGS = """
+INSERT INTO omnichannel (tenant_id, params, modified_at)
+VALUES (%(tenant_id)s, %(params)s, NOW())
+RETURNING id
+"""

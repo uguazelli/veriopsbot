@@ -1,0 +1,21 @@
+services:
+  evolution-api:
+    container_name: evolution_api
+    image: atendai/evolution-api:v2.1.1
+    restart: always
+    ports:
+      - "8085:8080"
+    env_file:
+      - .env
+    networks:
+      - veridata.network
+    volumes:
+      - evolution_instances:/evolution/instances
+
+volumes:
+  evolution_instances:
+
+networks:
+  veridata.network:
+    external: true
+

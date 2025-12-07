@@ -35,49 +35,9 @@ services:
     working_dir: /workspace
     stdin_open: true
     tty: true
-    # No DB dependency anymore
-    # No DB dependency anymore
     depends_on: []
     networks:
       - veridata.network
-
-  n8n:
-    image: n8nio/n8n:latest
-    container_name: veriopsn8n
-    restart: unless-stopped
-    ports:
-      - "5678:5678"
-    env_file:
-      - .env
-    environment:
-      # Editor/UI URL
-      N8N_EDITOR_BASE_URL: ${N8N_EDITOR_BASE_URL:-http://localhost:5678}
-      # Host/port inside container
-      N8N_HOST: ${N8N_HOST:-localhost}
-      N8N_PORT: 5678
-      # Public URL where webhooks will be reached (adjust for your domain in prod)
-      WEBHOOK_URL: ${WEBHOOK_URL:-http://localhost:5678}
-      N8N_SECURE_COOKIE: "false"
-      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Argentina/Buenos_Aires}
-      # Optional auth for the editor (uncomment to protect in dev/prod)
-      # N8N_BASIC_AUTH_ACTIVE: "true"
-      # N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER:-admin}
-      # N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD:-change-me}
-
-      # --- Tell n8n to use Postgres ---
-      DB_TYPE: postgres
-      DB_POSTGRESDB_HOST: veridata.network.postgres
-      DB_POSTGRESDB_PORT: 5432
-      DB_POSTGRESDB_DATABASE: n8n
-      DB_POSTGRESDB_USER: n8n_user
-      DB_POSTGRESDB_PASSWORD: strong_password_here
-    volumes:
-      - n8n_data:/home/node/.n8n
-    networks:
-      - veridata.network
-
-volumes:
-  n8n_data:
 
 networks:
   veridata.network:

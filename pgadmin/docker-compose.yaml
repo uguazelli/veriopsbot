@@ -1,0 +1,15 @@
+services:
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "${PGADMIN_LISTEN_PORT}:80"
+    networks:
+      - veridata.network
+
+networks:
+  veridata.network:
+    external: true

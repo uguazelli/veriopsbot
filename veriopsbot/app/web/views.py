@@ -28,6 +28,10 @@ from app.db.repository import (
     update_llm_settings,
     update_omnichannel_settings,
     update_user_account,
+    list_tenants,
+    upsert_llm_settings,
+    upsert_crm_settings,
+    upsert_omnichannel_settings,
 )
 
 router = APIRouter()
@@ -805,26 +809,260 @@ async def update_settings(request: Request):
         )
         _log("db", op="update_omnichannel_settings", omnichannel_id=omnichannel_id, ok=True)
 
+        # Invalidate caches
         await invalidate_params_cache(omnichannel_id)
         await invalidate_tenant_params_cache(session["tenant_id"])
-        _log("db", op="invalidate_caches", omnichannel_id=omnichannel_id, tenant_id=session["tenant_id"], ok=True)
+
     except Exception as e:
-        _log("error", route="POST /settings", during="update_settings_and_invalidate", error=str(e))
+        _log("error", route="POST /settings", during="update_settings", error=str(e))
         raise
 
-    refreshed_config = await get_params_by_tenant_id(session["tenant_id"])
-    refreshed_form_values = _build_form_values(refreshed_config)
-
     _log("exit", route="POST /settings", status="success")
+    return RedirectResponse(
+        url="/settings?message=Settings updated successfully.",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.get("/admin/tenants", response_class=HTMLResponse)
+async def admin_tenants(request: Request):
+    _log("enter", route="GET /admin/tenants")
+    session = _get_session(request)
+    if not session or not session.get("is_admin"):
+        _log("warn", route="GET /admin/tenants", reason="not admin")
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    try:
+        tenants = await list_tenants()
+    except Exception as e:
+        _log("error", route="GET /admin/tenants", error=str(e))
+        raise
+
+    _log("exit", route="GET /admin/tenants", count=len(tenants))
     return templates.TemplateResponse(
-        "settings.html",
-        _settings_template_context(
-            request,
-            session,
-            refreshed_form_values,
-            message="Settings updated successfully.",
-            errors=[],
-        ),
+        "admin_tenants.html",
+        {
+            "request": request,
+            "user_email": session["email"],
+            "is_admin": True,
+            "tenants": tenants,
+        },
+    )
+
+
+@router.get("/admin/tenants/{tenant_id}", response_class=HTMLResponse)
+async def admin_tenant_settings(request: Request, tenant_id: int):
+    _log("enter", route=f"GET /admin/tenants/{tenant_id}")
+    session = _get_session(request)
+    if not session or not session.get("is_admin"):
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    try:
+        config = await get_params_by_tenant_id(tenant_id)
+    except Exception as e:
+        _log("error", route=f"GET /admin/tenants/{tenant_id}", error=str(e))
+        raise
+
+    # If config is empty (no settings found), we still want to show the form to create them.
+    # _build_form_values handles empty config gracefully.
+    form_values = _build_form_values(config)
+
+    message = request.query_params.get("message")
+    errors: list[str] = []
+    if request.query_params.get("error"):
+        errors.append(request.query_params.get("error"))
+
+    _log("exit", route=f"GET /admin/tenants/{tenant_id}")
+    return templates.TemplateResponse(
+        "admin_tenant_settings.html",
+        {
+            "request": request,
+            "user_email": session["email"],
+            "is_admin": True,
+            "target_tenant_id": tenant_id,
+            "target_email": config.get("email") or f"Tenant {tenant_id}",
+            "form_values": form_values,
+            "message": message,
+            "errors": errors,
+            "provider_options": PROVIDER_OPTIONS,
+            "model_options": MODEL_OPTIONS,
+            "handoff_priorities": HANDOFF_PRIORITIES,
+            "embed_options": EMBED_MODEL_OPTIONS,
+        },
+    )
+
+
+@router.post("/admin/tenants/{tenant_id}", response_class=HTMLResponse)
+async def admin_update_tenant_settings(request: Request, tenant_id: int):
+    _log("enter", route=f"POST /admin/tenants/{tenant_id}")
+    session = _get_session(request)
+    if not session or not session.get("is_admin"):
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    try:
+        config = await get_params_by_tenant_id(tenant_id)
+    except Exception as e:
+        _log("error", route=f"POST /admin/tenants/{tenant_id}", error=str(e))
+        raise
+
+    form = await request.form()
+    form_dict: Dict[str, str] = {
+        key: (value.strip() if isinstance(value, str) else value)
+        for key, value in form.items()
+    }
+
+    errors: list[str] = []
+
+    # Current values (might be empty if new)
+    current_llm = config.get("llm_params") or {}
+    current_crm = config.get("crm_params") or {}
+    current_omni = config.get("omnichannel") or {}
+
+    # Required fields validation (same as settings)
+    required_fields = {
+        "llm_name": "LLM name",
+        "llm_api_key": "LLM API key",
+        "llm_model_answer": "LLM model answer",
+        "crm_url": "CRM URL",
+        "crm_token": "CRM token",
+        "chatwoot_api_url": "Chatwoot API URL",
+        "chatwoot_account_id": "Chatwoot account ID",
+        "chatwoot_api_access_token": "Chatwoot API access token",
+        "chatwoot_bot_access_token": "Chatwoot bot access token",
+    }
+
+    effective_inputs: Dict[str, str] = {}
+    for field, label in required_fields.items():
+        submitted_value = form_dict.get(field)
+
+        candidate = submitted_value
+        if candidate == "": candidate = None
+
+        existing_val = None
+        if field.startswith("llm_"):
+            existing_val = current_llm.get(field.replace("llm_", ""))
+        elif field.startswith("crm_"):
+            existing_val = current_crm.get(field.replace("crm_", ""))
+        else:
+            existing_val = current_omni.get(field)
+
+        if candidate is None:
+            candidate = existing_val
+
+        if not candidate:
+            errors.append(f"{label} is required.")
+        else:
+            effective_inputs[field] = str(candidate)
+
+    # Validate numbers
+    top_k_raw = form_dict.get("llm_top_k", "")
+    top_k = current_llm.get("top_k")
+    if top_k_raw:
+        try:
+            top_k = int(top_k_raw)
+        except ValueError:
+            errors.append("LLM Top K must be an integer.")
+
+    temperature_raw = form_dict.get("llm_temperature", "")
+    temperature = current_llm.get("temperature")
+    if temperature_raw:
+        try:
+            temperature = float(temperature_raw)
+        except ValueError:
+            errors.append("LLM temperature must be a number.")
+
+    monthly_limit_raw = form_dict.get("llm_monthly_limit", "")
+    monthly_limit = current_llm.get("monthly_llm_request_limit")
+    if monthly_limit_raw == "":
+        monthly_limit = None
+    elif monthly_limit_raw:
+        try:
+            monthly_limit = int(monthly_limit_raw)
+        except ValueError:
+            errors.append("Monthly LLM request limit must be an integer.")
+
+    if errors:
+        # Re-render form with errors
+        form_values = _build_form_values(config, overrides=form_dict)
+        return templates.TemplateResponse(
+            "admin_tenant_settings.html",
+            {
+                "request": request,
+                "user_email": session["email"],
+                "is_admin": True,
+                "target_tenant_id": tenant_id,
+                "target_email": config.get("email") or f"Tenant {tenant_id}",
+                "form_values": form_values,
+                "errors": errors,
+                "provider_options": PROVIDER_OPTIONS,
+                "model_options": MODEL_OPTIONS,
+                "handoff_priorities": HANDOFF_PRIORITIES,
+                "embed_options": EMBED_MODEL_OPTIONS,
+            },
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Construct params
+    updated_llm_params = dict(current_llm)
+    updated_llm_params["name"] = effective_inputs["llm_name"]
+    updated_llm_params["api_key"] = effective_inputs["llm_api_key"]
+    updated_llm_params["model_answer"] = effective_inputs["llm_model_answer"]
+
+    # Helper to set optional fields
+    def set_or_pop(mapping: Dict[str, Any], key: str, value: Any) -> None:
+        if value is None:
+            mapping.pop(key, None)
+        elif isinstance(value, str) and value == "":
+            mapping.pop(key, None)
+        else:
+            mapping[key] = value
+
+    set_or_pop(updated_llm_params, "handoff_priority", form_dict.get("llm_handoff_priority"))
+    set_or_pop(updated_llm_params, "openai_embed_model", form_dict.get("llm_openai_embed_model"))
+    set_or_pop(updated_llm_params, "handoff_private_note", form_dict.get("llm_handoff_private_note"))
+    set_or_pop(updated_llm_params, "handoff_public_reply", form_dict.get("llm_handoff_public_reply"))
+
+    if top_k is None: updated_llm_params.pop("top_k", None)
+    else: updated_llm_params["top_k"] = top_k
+
+    if temperature is None: updated_llm_params.pop("temperature", None)
+    else: updated_llm_params["temperature"] = temperature
+
+    if monthly_limit is None: updated_llm_params.pop("monthly_llm_request_limit", None)
+    else: updated_llm_params["monthly_llm_request_limit"] = monthly_limit
+
+    updated_crm_params = dict(current_crm)
+    updated_crm_params["url"] = effective_inputs["crm_url"]
+    updated_crm_params["token"] = effective_inputs["crm_token"]
+
+    updated_omni_params = dict(current_omni)
+    updated_omni_params["chatwoot_api_url"] = effective_inputs["chatwoot_api_url"]
+    updated_omni_params["chatwoot_account_id"] = effective_inputs["chatwoot_account_id"]
+    updated_omni_params["chatwoot_api_access_token"] = effective_inputs["chatwoot_api_access_token"]
+    updated_omni_params["chatwoot_bot_access_token"] = effective_inputs["chatwoot_bot_access_token"]
+
+    # IDs might be None if records don't exist
+    llm_id = config.get("llm_id")
+    crm_id = config.get("crm_id")
+    omnichannel_id = config.get("omnichannel_id")
+
+    try:
+        await upsert_llm_settings(tenant_id, updated_llm_params, llm_id)
+        await upsert_crm_settings(tenant_id, updated_crm_params, crm_id)
+        await upsert_omnichannel_settings(tenant_id, updated_omni_params, omnichannel_id)
+
+        # Invalidate caches
+        if omnichannel_id:
+            await invalidate_params_cache(omnichannel_id)
+        await invalidate_tenant_params_cache(tenant_id)
+
+    except Exception as e:
+        _log("error", route=f"POST /admin/tenants/{tenant_id}", error=str(e))
+        raise
+
+    return RedirectResponse(
+        url=f"/admin/tenants/{tenant_id}?message=Settings updated successfully.",
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
