@@ -90,9 +90,16 @@ async def query_rag(
     request: Request,
     tenant_id: Annotated[UUID, Form()],
     query: Annotated[str, Form()],
+    use_hyde: Annotated[bool, Form()] = False,
+    use_rerank: Annotated[bool, Form()] = False,
     username: str = Depends(get_current_username)
 ):
-    answer = generate_answer(tenant_id, query)
+    answer = generate_answer(
+        tenant_id,
+        query,
+        use_hyde=use_hyde,
+        use_rerank=use_rerank
+    )
     return templates.TemplateResponse(
         "partials/chat_response.html",
         {"request": request, "answer": answer, "query": query}

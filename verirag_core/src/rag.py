@@ -9,6 +9,8 @@ from llama_index.llms.gemini import Gemini
 
 from src.db import get_db
 from src.embeddings import CustomGeminiEmbedding
+from src.hyde import generate_hypothetical_answer
+from src.rerank import rerank_documents
 
 logger = logging.getLogger(__name__)
 
@@ -75,16 +77,34 @@ def ingest_document(tenant_id: UUID, filename: str, content: str):
                 )
     logger.info(f"Successfully ingested {filename}")
 
-def search_documents(tenant_id: UUID, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+def search_documents(
+    tenant_id: UUID,
+    query: str,
+    limit: int = 5,
+    use_hyde: bool = False,
+    use_rerank: bool = False
+) -> List[Dict[str, Any]]:
     """
     Performs a hybrid search (currently vector similarity) for a query.
+    Supports Query Expansion (HyDE) and Reranking.
     """
+    # 1. Query Expansion (HyDE)
+    search_query = query
+    if use_hyde:
+        logger.info("Using HyDE expansion")
+        search_query = generate_hypothetical_answer(query)
+
+    # 2. Embed Query
     embed_model = get_embed_model()
     try:
-        query_embedding = embed_model.get_query_embedding(query)
+        query_embedding = embed_model.get_query_embedding(search_query)
     except Exception as e:
         logger.error(f"Query embedding failed: {e}")
         return []
+
+    # 3. Retrieve Candidates
+    # If using rerank, we fetch more candidates (e.g., 4x the limit) to rerank down
+    candidate_limit = limit * 4 if use_rerank else limit
 
     results = []
     with get_db() as conn:
@@ -99,7 +119,7 @@ def search_documents(tenant_id: UUID, query: str, limit: int = 5) -> List[Dict[s
                 ORDER BY distance ASC
                 LIMIT %s
                 """,
-                (query_embedding, tenant_id, limit)
+                (query_embedding, tenant_id, candidate_limit)
             )
             rows = cur.fetchall()
 
@@ -110,6 +130,12 @@ def search_documents(tenant_id: UUID, query: str, limit: int = 5) -> List[Dict[s
                     "content": row[2],
                     "distance": float(row[3])
                 })
+
+    # 4. Reranking
+    if use_rerank and results:
+        logger.info("Reranking results")
+        # We rerank against the ORIGINAL query, not the HyDE query
+        results = rerank_documents(query, results, top_k=limit)
 
     return results
 
@@ -124,12 +150,24 @@ def get_llm():
         _llm = Gemini(model=model_name, api_key=api_key)
     return _llm
 
-def generate_answer(tenant_id: UUID, query: str) -> str:
+def generate_answer(
+    tenant_id: UUID,
+    query: str,
+    use_hyde: bool = False,
+    use_rerank: bool = False
+) -> str:
     """
     Retrieves context and generates an answer using the LLM.
     """
+    logger.info(f"Generating answer for query: '{query}' | HyDE={use_hyde} | Rerank={use_rerank}")
+
     # 1. Retrieve Context
-    results = search_documents(tenant_id, query)
+    results = search_documents(
+        tenant_id,
+        query,
+        use_hyde=use_hyde,
+        use_rerank=use_rerank
+    )
 
     if not results:
         return "I could not find any relevant information in the documents."
