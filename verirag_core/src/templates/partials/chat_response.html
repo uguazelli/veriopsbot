@@ -1,0 +1,11 @@
+<div class="space-y-4">
+    <div class="flex items-center justify-between">
+        <h4 class="text-sm font-medium text-gray-500">Question: "{{ query }}"</h4>
+    </div>
+
+    <div class="bg-gray-50 border border-gray-200 rounded-lg p-6 shadow-sm">
+        <div class="prose prose-sm max-w-none text-gray-800">
+            {{ answer | safe }}
+        </div>
+    </div>
+</div>

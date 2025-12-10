@@ -1,5 +1,5 @@
 services:
-  cache:
+  redis:
     image: redis:alpine
     container_name: veridata.redis
     restart: always
@@ -10,7 +10,9 @@ services:
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     networks:
-      - veridata.network
+      veridata.network:
+        aliases:
+          - veridata.redis
 volumes:
   redis_data:
     driver: local

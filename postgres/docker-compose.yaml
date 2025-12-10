@@ -1,7 +1,7 @@
 services:
   postgres:
     image: pgvector/pgvector:pg18
-    container_name: veridata.postgres
+    container_name: veridata
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -12,7 +12,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql
     networks:
-      - veridata.network
+      veridata.network:
+        aliases:
+          - veridata.postgres
 
 volumes:
   postgres_data:

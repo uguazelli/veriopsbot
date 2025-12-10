@@ -1,0 +1,26 @@
+services:
+  api:
+    build: .
+    container_name: veridata.rag
+    environment:
+      # Connect to external postgres container
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vd}:${POSTGRES_PASSWORD:-vd}@veridata.postgres:5432/${POSTGRES_DB:-veridata_rag}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    networks:
+      veridata.network:
+        aliases:
+          - veridata.rag
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+        - action: rebuild
+          path: ./pyproject.toml
+
+networks:
+  veridata.network:
+    external: true

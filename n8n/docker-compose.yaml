@@ -3,10 +3,10 @@ name: veriops
 services:
   n8n:
     image: n8nio/n8n:latest
-    container_name: veriopsn8n
+    container_name: n8n
     restart: unless-stopped
     ports:
-      - "5678:5678"
+      - "${N8N_PORT:-5678}:5678"
     env_file:
       - .env
     environment:
@@ -14,11 +14,11 @@ services:
       N8N_EDITOR_BASE_URL: ${N8N_EDITOR_BASE_URL:-http://localhost:5678}
       # Host/port inside container
       N8N_HOST: ${N8N_HOST:-localhost}
-      N8N_PORT: 5678
+      N8N_PORT: ${N8N_PORT:-5678}
       # Public URL where webhooks will be reached (adjust for your domain in prod)
       WEBHOOK_URL: ${WEBHOOK_URL:-http://localhost:5678}
       N8N_SECURE_COOKIE: "false"
-      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Argentina/Buenos_Aires}
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Sao_Paulo}
       # Optional auth for the editor (uncomment to protect in dev/prod)
       # N8N_BASIC_AUTH_ACTIVE: "true"
       # N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER:-admin}
@@ -34,7 +34,9 @@ services:
     volumes:
       - n8n_data:/home/node/.n8n
     networks:
-      - veridata.network
+      veridata.network:
+        aliases:
+          - veridata.n8n
 
 volumes:
   n8n_data:
