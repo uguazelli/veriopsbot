@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends
+from uuid import UUID
 from src.schemas import QueryRequest, QueryResponse
 from src.auth import get_current_username
 from src.rag import generate_answer
+from src.memory import create_session
 
 router = APIRouter()
 
@@ -10,16 +12,17 @@ async def api_query_rag(
     request: QueryRequest,
     username: str = Depends(get_current_username)
 ):
-    """
-    External API endpoint to query the RAG engine.
-    Authentication: Basic Auth (admin/admin).
-    Payload: {"tenant_id": "uuid", "query": "str"}
-    """
+    session_id = request.session_id
+    if not session_id:
+        session_id_str = create_session(request.tenant_id)
+        session_id = UUID(session_id_str)
+
     answer = generate_answer(
         request.tenant_id,
         request.query,
         use_hyde=request.use_hyde,
         use_rerank=request.use_rerank,
-        provider=request.provider
+        provider=request.provider,
+        session_id=session_id
     )
-    return QueryResponse(answer=answer)
+    return QueryResponse(answer=answer, session_id=session_id)

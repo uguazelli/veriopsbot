@@ -9,3 +9,14 @@
         </div>
     </div>
 </div>
+
+{% if session_id %}
+<!-- Update the hidden session_id input for subsequent requests -->
+<script>
+    var sessionInput = document.getElementById("session-id-input");
+    if (sessionInput) {
+        sessionInput.value = "{{ session_id }}";
+        console.log("Session ID updated to: {{ session_id }}");
+    }
+</script>
+{% endif %}

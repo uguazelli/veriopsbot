@@ -2,12 +2,11 @@ services:
   api:
     build: .
     container_name: veridata.rag
+    env_file:
+      - .env
     environment:
       # Connect to external postgres container
       DATABASE_URL: postgresql://${POSTGRES_USER:-vd}:${POSTGRES_PASSWORD:-vd}@veridata.postgres:5432/${POSTGRES_DB:-veridata_rag}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-      GEMINI_MODEL: ${GEMINI_MODEL}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
     ports:
       - "${API_PORT:-8000}:8000"
     networks:

@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from uuid import UUID
+from typing import Optional
 
 class QueryRequest(BaseModel):
     tenant_id: UUID
@@ -7,6 +8,8 @@ class QueryRequest(BaseModel):
     use_hyde: bool = False
     use_rerank: bool = False
     provider: str = "gemini"
+    session_id: Optional[UUID] = None
 
 class QueryResponse(BaseModel):
     answer: str
+    session_id: Optional[UUID] = None

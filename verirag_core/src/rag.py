@@ -12,11 +12,178 @@ from src.embeddings import CustomGeminiEmbedding
 from src.hyde import generate_hypothetical_answer
 from src.rerank import rerank_documents
 from src.llm_factory import get_llm
+from src.memory import add_message, get_chat_history
 
 logger = logging.getLogger(__name__)
 
 # Single instance of embedding model
 _embed_model = None
+
+# ... existing imports ...
+
+CONTEXTUALIZE_PROMPT_TEMPLATE = (
+    "Given a chat history and the latest user question which might reference context in the chat history, "
+    "formulate a standalone question which can be understood without the chat history. "
+    "Do NOT answer the question, just reformulate it if needed and otherwise return it as is.\n\n"
+    "Chat History:\n{history_str}\n\n"
+    "Latest Question: {query}\n\n"
+    "Standalone Question:"
+)
+
+INTENT_PROMPT_TEMPLATE = (
+    "You are a router. Analyze the user's query and decide if it requires looking up external documents (RAG) "
+    "or if it is just small talk/greetings that you can answer directly.\n\n"
+    "Rules:\n"
+    "1. Greetings ('hi', 'hello'), thanks ('thank you'), or personal questions ('who are you?') -> RAG = FALSE\n"
+    "2. Questions about specific entities, products, prices, websites, policies, or facts -> RAG = TRUE\n"
+    "3. Ambiguous questions ('what is it?', 'how much?', 'website?') -> RAG = TRUE\n"
+    "4. If you are unsure -> RAG = TRUE\n\n"
+    "Return JSON with a single key 'requires_rag' (boolean).\n\n"
+    "Query: {query}\n\n"
+    "JSON Output:"
+)
+
+def check_if_rag_required(query: str, provider: str = "gemini") -> bool:
+    """
+    Uses LLM to decide if RAG is needed.
+    """
+    try:
+        # Use a fast model for routing if possible
+        llm = get_llm(provider)
+        prompt = INTENT_PROMPT_TEMPLATE.format(query=query)
+        response = llm.complete(prompt)
+        text = response.text.replace('```json', '').replace('```', '').strip()
+        import json
+        data = json.loads(text)
+        requires_rag = data.get('requires_rag', True)
+        logger.info(f"Intent Classification: '{query}' -> RAG Required: {requires_rag}")
+        return requires_rag
+    except Exception as e:
+        logger.warning(f"Intent classification failed, defaulting to True: {e}")
+        return True
+
+def contextualize_query(query: str, history: List[Dict[str, str]], provider: str = "gemini") -> str:
+    """
+    Rewrites the user query to be standalone based on chat history.
+    """
+    if not history:
+        return query
+
+    history_str = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in history])
+
+    try:
+        llm = get_llm(provider)
+        prompt = CONTEXTUALIZE_PROMPT_TEMPLATE.format(history_str=history_str, query=query)
+        response = llm.complete(prompt)
+        rewritten = response.text.strip()
+        logger.info(f"Contextualized query: '{query}' -> '{rewritten}'")
+        return rewritten
+    except Exception as e:
+        logger.error(f"Contextualization failed: {e}")
+        return query
+
+# ... existing search_documents ...
+
+def generate_answer(
+    tenant_id: UUID,
+    query: str,
+    use_hyde: bool = False,
+    use_rerank: bool = False,
+    provider: str = "gemini",
+    session_id: Optional[UUID] = None
+) -> str:
+    """
+    Retrieves context and generates an answer using the requested LLM provider.
+    Supports Conversational Memory and Intent Classification.
+    """
+    logger.info(f"Generating answer for query: '{query}' | Session={session_id} | Provider={provider}")
+
+    # 1. Handle Memory (Contextualization)
+    search_query = query
+    history = []
+    if session_id:
+        history = get_chat_history(session_id, limit=5)
+        if history:
+            search_query = contextualize_query(query, history, provider)
+
+    # 2. Intent Classification (Small Talk vs RAG)
+    requires_rag = check_if_rag_required(search_query, provider)
+
+    results = []
+    answer = ""
+
+    # Format history for EITHER prompt
+    history_str = ""
+    if history:
+        history_str = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in history])
+
+    if requires_rag:
+        # 3. Retrieve Context (ONLY if needed)
+        results = search_documents(
+            tenant_id,
+            search_query,
+            use_hyde=use_hyde,
+            use_rerank=use_rerank,
+            provider=provider
+        )
+
+        if not results:
+            # If no docs found, try answering from history alone if possible, or fail gracefully
+            context_str = "No relevant documents found."
+        else:
+            context_str = "\n\n".join([f"Source: {r['filename']}\n{r['content']}" for r in results])
+
+        # 3. Prompt (RAG)
+        prompt = (
+            "You are a helpful assistant for a RAG system.\n"
+            "Use the following pieces of retrieved context AND the chat history to answer the user's question.\n"
+            "Priority:\n"
+            "1. Use the retrieved context for factual information about the documents.\n"
+            "2. Use the chat history for conversational context (e.g., user's name, previous topics).\n"
+            "If the answer is not in the context or history, say you don't know.\n\n"
+            f"Chat History:\n{history_str}\n\n"
+            f"Retrieved Context:\n{context_str}\n\n"
+            f"Question: {search_query}\n\n"
+            "Answer:"
+        )
+
+        # 4. Generate
+        try:
+            llm = get_llm(provider)
+            response = llm.complete(prompt)
+            answer = response.text
+        except Exception as e:
+            logger.error(f"LLM generation failed: {e}")
+            answer = "Sorry, I encountered an error generating the answer."
+    else:
+        # 4. Small Talk / Direct Generation
+        logger.info("Small talk detected. Bypassing RAG.")
+        prompt = (
+            "You are a helpful assistant.\n"
+            "Respond to the following user message nicely and concisely.\n"
+            "Use the chat history to maintain conversation context (e.g. remember names).\n"
+            "Do NOT hallucinate information about documents you don't see.\n"
+            f"Chat History:\n{history_str}\n\n"
+            f"Message: {search_query}\n\n"
+            "Response:"
+        )
+        try:
+            llm = get_llm(provider)
+            response = llm.complete(prompt)
+            answer = response.text
+        except Exception as e:
+            logger.error(f"LLM generation failed: {e}")
+            answer = "Sorry, I encountered an error generating the answer."
+
+    # 5. Save Logic (if session active)
+    if session_id:
+        try:
+            add_message(session_id, "user", query) # Save ORIGINAL query
+            add_message(session_id, "ai", answer)
+        except Exception as e:
+            logger.error(f"Failed to save message history: {e}")
+
+    return answer
 
 def get_embed_model():
     """
@@ -165,47 +332,4 @@ def search_documents(
 
     return results
 
-def generate_answer(
-    tenant_id: UUID,
-    query: str,
-    use_hyde: bool = False,
-    use_rerank: bool = False,
-    provider: str = "gemini"
-) -> str:
-    """
-    Retrieves context and generates an answer using the requested LLM provider.
-    """
-    logger.info(f"Generating answer for query: '{query}' | Provider={provider} | HyDE={use_hyde} | Rerank={use_rerank}")
 
-    # 1. Retrieve Context
-    results = search_documents(
-        tenant_id,
-        query,
-        use_hyde=use_hyde,
-        use_rerank=use_rerank,
-        provider=provider
-    )
-
-    if not results:
-        return "I could not find any relevant information in the documents."
-
-    context_str = "\n\n".join([f"Source: {r['filename']}\n{r['content']}" for r in results])
-
-    # 2. Prompt
-    prompt = (
-        "You are a helpful assistant for a RAG system.\n"
-        "Use the following pieces of retrieved context to answer the user's question.\n"
-        "If the answer is not in the context, say you don't know.\n\n"
-        f"Context:\n{context_str}\n\n"
-        f"Question: {query}\n\n"
-        "Answer:"
-    )
-
-    # 3. Generate
-    try:
-        llm = get_llm(provider)
-        response = llm.complete(prompt)
-        return response.text
-    except Exception as e:
-        logger.error(f"LLM generation failed: {e}")
-        return "Sorry, I encountered an error generating the answer."

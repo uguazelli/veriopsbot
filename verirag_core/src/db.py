@@ -45,9 +45,6 @@ def init_db():
 
             # Create documents table
             # embedding vector size depends on provider
-            # Gemini models/text-embedding-004: 768
-
-            # Gemini models/text-embedding-004: 768
             dim = 768
 
             # Check existing dimension if table exists
@@ -97,6 +94,31 @@ def init_db():
             # Create index for tenant_id for faster filtering
             cur.execute("""
                 CREATE INDEX IF NOT EXISTS documents_tenant_id_idx ON documents (tenant_id);
+            """)
+
+            # Create chat_sessions table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            # Create chat_messages table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    session_id UUID REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                    role VARCHAR(50) NOT NULL, -- 'user' or 'ai'
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            # Create index for session messages
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS chat_messages_session_id_idx ON chat_messages (session_id);
             """)
 
     logger.info("Database schema initialized.")
