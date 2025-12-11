@@ -45,18 +45,16 @@ async def process_webhook(payload: dict):
     data = payload.get("data", {})
     key = data.get("key", {})
 
-    # 2. CRITICAL: Ignore own messages (Prevent Loop)
-    if key.get("fromMe"):
-        return {"status": "ignored", "reason": "from_me"}
-
     remote_jid = key.get("remoteJid")
     if not remote_jid:
         return {"status": "error", "reason": "no_jid"}
 
-    # 3. Robust Text Extraction
-    message_content = data.get("message", {})
+    # Ignore Groups
+    if remote_jid.endswith("@g.us"):
+        return {"status": "ignored", "reason": "group_message"}
 
-    # Prioritize conversation (Android/Web), fallback to extended (iOS/Formatted)
+    # 2. Extract Data
+    message_content = data.get("message", {})
     user_text = (
         message_content.get("conversation") or
         message_content.get("extendedTextMessage", {}).get("text")
@@ -65,28 +63,47 @@ async def process_webhook(payload: dict):
     if not user_text:
         return {"status": "ignored", "reason": "no_text_found"}
 
-    # 4. Process Logic
     phone_number = remote_jid.split("@")[0]
     instance = payload.get("instance")
+    from_me = key.get("fromMe", False)
 
+
+    # Magic Words Logic (Status Toggling)
+    text_lower = user_text.strip().lower()
+
+    # Load from env or use defaults
+    pause_env = os.getenv("PAUSE_COMMANDS", "#stop,#human,#humano,#parar,#pause")
+    resume_env = os.getenv("RESUME_COMMANDS", "#bot,#start,#iniciar,#resume,#auto")
+
+    PAUSE_COMMANDS = [cmd.strip().lower() for cmd in pause_env.split(",") if cmd.strip()]
+    RESUME_COMMANDS = [cmd.strip().lower() for cmd in resume_env.split(",") if cmd.strip()]
+
+    # If message is FROM ME (Agent/Admin)
+    if from_me:
+        print(f"📤 Sent by Agent to {phone_number}: {user_text}")
+        if text_lower in PAUSE_COMMANDS:
+            await database.set_session_active(instance, phone_number, False)
+            await message_whatsapp(instance=instance, phone=phone_number, message="⏸️ Bot paused. Human agent can now take over.")
+            return {"status": "processed", "action": "paused_by_agent"}
+
+        if text_lower in RESUME_COMMANDS:
+            await database.set_session_active(instance, phone_number, True)
+            await message_whatsapp(instance=instance, phone=phone_number, message="🤖 Bot active. I am back!")
+            return {"status": "processed", "action": "resumed_by_agent"}
+
+        # Ignore other agent messages to prevent loops
+        return {"status": "ignored", "reason": "from_me"}
+
+    # If message is FROM Client (Not me)
     print(f"📩 Received from {phone_number} on {instance}: {user_text}")
 
-    # Magic Words Logic
-    text_lower = user_text.strip().lower()
-    PAUSE_COMMANDS = ["#stop", "#human", "#humano", "#parar", "#pause"]
-    RESUME_COMMANDS = ["#bot", "#start", "#iniciar", "#resume", "#auto"]
+    # OPTIONAL: Explicitly ignore magic commands from client if they shouldn't control the bot
+    if text_lower in PAUSE_COMMANDS or text_lower in RESUME_COMMANDS:
+        print(f"⚠️ Ignoring magic command from client: {user_text}")
+        # Return processed but do nothing (or ignored)
+        return {"status": "ignored", "reason": "client_command_ignored"}
 
-    if text_lower in PAUSE_COMMANDS:
-        await database.set_session_active(instance, phone_number, False)
-        await message_whatsapp(instance=instance, phone=phone_number, message="⏸️ Bot paused. Human agent can now take over.")
-        return {"status": "processed", "action": "paused"}
-
-    if text_lower in RESUME_COMMANDS:
-        await database.set_session_active(instance, phone_number, True)
-        await message_whatsapp(instance=instance, phone=phone_number, message="🤖 Bot active. I am back!")
-        return {"status": "processed", "action": "resumed"}
-
-    # Check Status
+    # 4. Check Status
     is_active = await database.get_session_status(instance, phone_number)
     if not is_active:
         print(f"💤 Bot paused for {phone_number}. Ignoring message.")
@@ -113,21 +130,11 @@ async def process_webhook(payload: dict):
         response_text = "I'm having trouble connecting to my brain right now. Please try again later."
     else:
         # Extract answer from RAG response - adjusting based on expected format
-        # Assuming format { "text": "Answer..." } or similar.
-        # If response is direct JSON from flow, it might be different.
-        # Let's dump the whole response text for now if key isn't clear,
-        # or assume "response" / "text" / "answer" key.
-        # User example didn't show response format, just request.
-        # Let's assume standard field or stringify.
         response_text = rag_response.get("text") or rag_response.get("answer") or rag_response.get("response")
         if not response_text:
-             # Fallback if structure is different
              response_text = str(rag_response)
 
         # 8. Save/Update Session
-        # Check if RAG returned a new session_id or if we keep the old one?
-        # User said "we will only have it after the first cll (Its is the memory of rag)"
-        # So likely RAG returns a session_id.
         new_session_id = rag_response.get("session_id")
         if new_session_id:
             await database.update_session_id(instance, phone_number, new_session_id)

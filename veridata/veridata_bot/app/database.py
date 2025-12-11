@@ -22,9 +22,8 @@ async def init_db():
         print("✅ Database connection established and tables checked.")
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
-        # Make this non-fatal for now to allow app to start even if DB is down,
-        # but in production you might want to crash.
-        pass
+        # Re-raise to prevent app from starting without DB
+        raise e
 
 async def close_db():
     if pool:
@@ -78,13 +77,16 @@ async def get_all_mappings() -> list[dict]:
 
 async def upsert_mapping(instance_name: str, tenant_id: str):
     if not pool:
+        print("❌ ERROR: Connection pool is None in upsert_mapping")
         return
+    print(f"🛠️ Upserting mapping: {instance_name} -> {tenant_id}")
     async with pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO mappings (instance_name, tenant_id)
             VALUES ($1, $2)
             ON CONFLICT (instance_name) DO UPDATE SET tenant_id = EXCLUDED.tenant_id
         """, instance_name, tenant_id)
+    print("✅ Mapping upserted successfully")
 
 async def delete_mapping(instance_name: str):
     if not pool:

@@ -1,4 +1,4 @@
-name: veriops
+name: veridata
 
 services:
   veridata_bot:

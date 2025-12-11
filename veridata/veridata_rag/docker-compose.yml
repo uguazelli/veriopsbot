@@ -1,12 +1,14 @@
+name: veridata
+
 services:
-  api:
+  veridata_rag:
     build: .
     container_name: veridata.rag
     env_file:
       - .env
     environment:
       # Connect to external postgres container
-      DATABASE_URL: postgresql://${POSTGRES_USER:-vd}:${POSTGRES_PASSWORD:-vd}@veridata.postgres:5432/${POSTGRES_DB:-veridata_rag}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-vd}:${POSTGRES_PASSWORD:-vd}@$POSTGRES_HOST:5432/${POSTGRES_DB:-veridata_rag}
     ports:
       - "${API_PORT:-8000}:8000"
     networks:
