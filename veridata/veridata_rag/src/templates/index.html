@@ -1,6 +1,20 @@
 {% extends "base.html" %}
 
 {% block content %}
+<script>
+    async function performLogout() {
+        // 1. Send request with invalid credentials to "poison" the browser cache for this realm
+        try {
+            await fetch("/", {
+                headers: { "Authorization": "Basic " + btoa("logout:logout") }
+            });
+        } catch (e) {
+            // Ignore network errors, finding 401 is expected
+        }
+        // 2. Reload page to trigger the native login prompt (since cached creds are now invalid)
+        window.location.href = "/";
+    }
+</script>
 <!-- Sidebar -->
 <div class="w-64 bg-gray-900 text-white flex flex-col flex-shrink-0">
     <div class="p-4 border-b border-gray-800">
@@ -27,6 +41,29 @@
                 class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition">Add
                 Tenant</button>
         </form>
+    </div>
+
+    <!-- User Profile & Logout -->
+    <div class="p-4 border-t border-gray-800 bg-gray-900">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-2 overflow-hidden">
+                <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold">
+                    {{ username[0].upper() if username else 'U' }}
+                </div>
+                <div class="text-sm font-medium truncate max-w-[100px]" title="{{ username }}">
+                    {{ username or 'User' }}
+                </div>
+            </div>
+            <a href="#" onclick="performLogout(); return false;"
+                class="text-gray-400 hover:text-white p-2 rounded-full hover:bg-gray-800 transition" title="Logout">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+            </a>
+        </div>
     </div>
 </div>
 

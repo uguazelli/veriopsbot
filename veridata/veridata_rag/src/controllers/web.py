@@ -32,7 +32,7 @@ async def dashboard(request: Request, username: str = Depends(get_current_userna
     tenants = get_tenants()
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "tenants": tenants, "selected_tenant": None}
+        {"request": request, "tenants": tenants, "selected_tenant": None, "username": username}
     )
 
 @router.post("/tenants", response_class=HTMLResponse)
@@ -59,7 +59,8 @@ async def view_tenant(request: Request, tenant_id: UUID, username: str = Depends
             "request": request,
             "tenants": tenants,
             "selected_tenant": {"id": str(tenant_id), "name": tenant_name},
-            "documents": documents
+            "documents": documents,
+            "username": username
         }
     )
 

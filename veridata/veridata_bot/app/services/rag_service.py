@@ -20,7 +20,9 @@ async def query_rag(tenant_id: str, query: str, session_id: str = None, provider
     payload = {
         "tenant_id": tenant_id,
         "query": query,
-        "provider": provider
+        "provider": provider,
+        "use_hyde": True,
+        "use_rerank": True
     }
 
     if session_id:

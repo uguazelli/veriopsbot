@@ -43,7 +43,9 @@ To call the RAG engine from another system, use the `/api/query` endpoint.
 ```json
 {
   "tenant_id": "YOUR_TENANT_UUID",
-  "query": "Your question here"
+  "query": "Your question here",
+  "use_hyde": false,   // Optional: Enable Query Expansion (HyDE)
+  "use_rerank": false  // Optional: Enable Reranking
 }
 ```
 
@@ -59,5 +61,10 @@ To call the RAG engine from another system, use the `/api/query` endpoint.
 curl -X POST http://localhost:8000/api/query \
   -u admin:admin \
   -H "Content-Type: application/json" \
-  -d '{"tenant_id": "your-uuid", "query": "Hello world"}'
+  -d '{
+    "tenant_id": "your-uuid",
+    "query": "Hello world",
+    "use_hyde": true,
+    "use_rerank": true
+  }'
 ```
