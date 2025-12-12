@@ -17,7 +17,7 @@ async def api_query_rag(
         session_id_str = create_session(request.tenant_id)
         session_id = UUID(session_id_str)
 
-    answer = generate_answer(
+    answer, requires_human = generate_answer(
         request.tenant_id,
         request.query,
         use_hyde=request.use_hyde,
@@ -25,4 +25,8 @@ async def api_query_rag(
         provider=request.provider,
         session_id=session_id
     )
-    return QueryResponse(answer=answer, session_id=session_id)
+    return QueryResponse(
+        answer=answer,
+        requires_human=requires_human,
+        session_id=session_id
+    )

@@ -31,21 +31,25 @@ CONTEXTUALIZE_PROMPT_TEMPLATE = (
 )
 
 INTENT_PROMPT_TEMPLATE = (
-    "You are a router. Analyze the user's query and decide if it requires looking up external documents (RAG) "
-    "or if it is just small talk/greetings that you can answer directly.\n\n"
-    "Rules:\n"
-    "1. Greetings ('hi', 'hello'), thanks ('thank you'), or personal questions ('who are you?') -> RAG = FALSE\n"
-    "2. Questions about specific entities, products, prices, websites, policies, or facts -> RAG = TRUE\n"
-    "3. Ambiguous questions ('what is it?', 'how much?', 'website?') -> RAG = TRUE\n"
-    "4. If you are unsure -> RAG = TRUE\n\n"
-    "Return JSON with a single key 'requires_rag' (boolean).\n\n"
+    "You are a router. Analyze the user's query and decide on two things:\n"
+    "1. Does it require looking up external documents? (RAG)\n"
+    "2. Does the user explicitly ask to speak to a human agent? (HUMAN)\n\n"
+    "Rules for RAG:\n"
+    "1. Greetings, thanks, or personal questions -> RAG = FALSE\n"
+    "2. Questions about entities, products, policies, facts -> RAG = TRUE\n"
+    "3. Ambiguous questions -> RAG = TRUE\n"
+    "4. Unsure -> RAG = TRUE\n\n"
+    "Rules for HUMAN:\n"
+    "1. User says 'talk to human', 'real person', 'support agent', 'manager' -> HUMAN = TRUE\n"
+    "2. Otherwise -> HUMAN = FALSE\n\n"
+    "Return JSON with keys 'requires_rag' (bool) and 'requires_human' (bool).\n\n"
     "Query: {query}\n\n"
     "JSON Output:"
 )
 
-def check_if_rag_required(query: str, provider: str = "gemini") -> bool:
+def analyze_intent(query: str, provider: str = "gemini") -> Dict[str, bool]:
     """
-    Uses LLM to decide if RAG is needed.
+    Uses LLM to decide if RAG is needed and if human handoff is requested.
     """
     try:
         # Use a fast model for routing if possible
@@ -56,11 +60,12 @@ def check_if_rag_required(query: str, provider: str = "gemini") -> bool:
         import json
         data = json.loads(text)
         requires_rag = data.get('requires_rag', True)
-        logger.info(f"Intent Classification: '{query}' -> RAG Required: {requires_rag}")
-        return requires_rag
+        requires_human = data.get('requires_human', False)
+        logger.info(f"Intent Classification: '{query}' -> RAG: {requires_rag}, Human: {requires_human}")
+        return {"requires_rag": requires_rag, "requires_human": requires_human}
     except Exception as e:
-        logger.warning(f"Intent classification failed, defaulting to True: {e}")
-        return True
+        logger.warning(f"Intent classification failed, defaulting to RAG=True, Human=False: {e}")
+        return {"requires_rag": True, "requires_human": False}
 
 def contextualize_query(query: str, history: List[Dict[str, str]], provider: str = "gemini") -> str:
     """
@@ -91,7 +96,7 @@ def generate_answer(
     use_rerank: bool = False,
     provider: str = "gemini",
     session_id: Optional[UUID] = None
-) -> str:
+) -> tuple[str, bool]:
     """
     Retrieves context and generates an answer using the requested LLM provider.
     Supports Conversational Memory and Intent Classification.
@@ -106,11 +111,32 @@ def generate_answer(
         if history:
             search_query = contextualize_query(query, history, provider)
 
-    # 2. Intent Classification (Small Talk vs RAG)
-    requires_rag = check_if_rag_required(search_query, provider)
+    # 2. Intent Classification (Small Talk vs RAG vs Human)
+    intent = analyze_intent(search_query, provider)
+    requires_rag = intent["requires_rag"]
+    requires_human = intent["requires_human"]
 
     results = []
     answer = ""
+
+    # If human handoff is requested, short-circuit
+    if requires_human:
+        logger.info("Human handoff requested.")
+        prompt = (
+            "You are a helpful assistant.\n"
+            "The user explicitly asked to speak to a human agent.\n"
+            "Generate a polite response confirming you will transfer them to a human agent.\n"
+            "IMPORTANT: Expected output must be in the SAME language as the user's message.\n"
+            f"User Message: {search_query}\n"
+            "Response:"
+        )
+        try:
+            llm = get_llm(provider)
+            response = llm.complete(prompt)
+            return response.text.strip(), True
+        except Exception as e:
+            logger.error(f"LLM generation for handoff failed: {e}")
+            return "I will transfer you to a human agent.", True
 
     # Format history for EITHER prompt
     history_str = ""
@@ -137,6 +163,7 @@ def generate_answer(
         prompt = (
             "You are a helpful assistant for a RAG system.\n"
             "Use the following pieces of retrieved context AND the chat history to answer the user's question.\n"
+            "IMPORTANT: Always answer in the same language as the user's question.\n"
             "Priority:\n"
             "1. Use the retrieved context for factual information about the documents.\n"
             "2. Use the chat history for conversational context (e.g., user's name, previous topics).\n"
@@ -161,6 +188,7 @@ def generate_answer(
         prompt = (
             "You are a helpful assistant.\n"
             "Respond to the following user message nicely and concisely.\n"
+            "IMPORTANT: Always answer in the same language as the user's message.\n"
             "Use the chat history to maintain conversation context (e.g. remember names).\n"
             "Do NOT hallucinate information about documents you don't see.\n"
             f"Chat History:\n{history_str}\n\n"
@@ -183,7 +211,7 @@ def generate_answer(
         except Exception as e:
             logger.error(f"Failed to save message history: {e}")
 
-    return answer
+    return answer, False
 
 def get_embed_model():
     """
