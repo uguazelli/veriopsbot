@@ -1,5 +1,7 @@
 import httpx
 import os
+import base64
+from app.services import rag_service
 
 EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY", "")
 EVOLUTION_URL = os.getenv("EVOLUTION_URL", "https://dev-evolution.veridatapro.com")
@@ -27,6 +29,35 @@ async def mark_message_read(*, instance: str, message_id: str, phone: str):
             await client.post(url, json=payload, headers=headers)
         except Exception as e:
             print(f"❌ Failed to mark message as read: {str(e)}")
+
+async def get_audio_bytes(*, instance: str, message_data: dict, phone: str):
+    """
+    Fetches the audio base64 from Evolution API and decodes it.
+    """
+    url = f"{EVOLUTION_URL}/chat/getBase64FromMediaMessage/{instance}"
+
+    payload = {
+        "message": message_data,
+        "convertToMp4": False
+    }
+
+    headers = {
+        "apikey": EVOLUTION_API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            print(f"🎧 Fetching audio for {phone}...")
+            response = await client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            result = response.json()
+            b64_str = result.get("base64")
+            if b64_str:
+                return base64.b64decode(b64_str)
+        except Exception as e:
+            print(f"❌ Failed to fetch audio: {str(e)}")
+    return None
 
 async def message_whatsapp(*, instance: str, phone: str, message: str, delay: int = 5000):
     url = f"{EVOLUTION_URL}/message/sendText/{instance}"
@@ -83,12 +114,32 @@ async def process_webhook(payload: dict):
         message_content.get("extendedTextMessage", {}).get("text")
     )
 
-    if not user_text:
-        return {"status": "ignored", "reason": "no_text_found"}
-
     phone_number = remote_jid.split("@")[0]
     instance = payload.get("instance")
     from_me = key.get("fromMe", False)
+
+    # Handle Audio
+    if not user_text and message_content.get("audioMessage"):
+        print(f"🎤 [Evolution] Audio message received from {remote_jid}")
+        audio_bytes = await get_audio_bytes(
+            instance=instance,
+            message_data=data, # Pass full data object (includes key)
+            phone=phone_number
+        )
+        if audio_bytes:
+            print(f"📝 Transcribing audio...")
+            transcript = await rag_service.transcribe_audio(audio_bytes)
+            if transcript:
+                print(f"🗣️ Transcription: {transcript}")
+                user_text = transcript
+            else:
+                user_text = "[Audio unintelligible]"
+        else:
+             print("❌ Could not retrieve audio bytes.")
+
+    if not user_text:
+        return {"status": "ignored", "reason": "no_text_found"}
+
 
     # 3. Define Callback for Replying
     async def reply_to_whatsapp(text: str):
