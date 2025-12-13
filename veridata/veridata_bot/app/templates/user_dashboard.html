@@ -7,20 +7,19 @@
         {% include "partials/global_toggle_btn.html" %}
 
         <form action="/user/logout" method="post" style="margin: 0;">
-            <button type="submit"
-                style="background-color: var(--secondary-color); border: 1px solid var(--border-color);">Logout</button>
+            <button type="submit" class="btn btn-secondary">Logout</button>
         </form>
     </div>
 </div>
 
-<div
-    style="background-color: var(--secondary-color); padding: 1.5rem; border-radius: 0.5rem; margin-top: 2rem; border: 1px solid var(--border-color);">
+<div class="card" style="margin-bottom: 2rem;">
     <h3 style="margin-top: 0; display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
         Monthly Usage
-        <span style="font-size: 0.9em; font-weight: normal; color: #94a3b8;">Resets: {{ quota.renewal }}</span>
+        <span style="font-size: 0.9em; font-weight: normal; color: var(--text-muted);">Resets: {{ quota.renewal
+            }}</span>
     </h3>
     <div
-        style="background-color: var(--bg-color); height: 1.5rem; border-radius: 1rem; overflow: hidden; position: relative; border: 1px solid var(--border-color);">
+        style="background-color: #f1f5f9; height: 1.25rem; border-radius: 9999px; overflow: hidden; position: relative;">
         {% set percentage = quota.used / quota.limit * 100 if quota.limit > 0 else 0 %}
         {% if percentage > 100 %}{% set percentage = 100 %}{% endif %}
 
@@ -29,15 +28,15 @@
         </div>
 
         <div
-            style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 0.875rem; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.8);">
-            {{ quota.used }} / {{ quota.limit }} Messages
+            style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600; color: #334155; text-shadow: 0 0 2px rgba(255,255,255,0.8);">
+            {{ quota.used }} / {{ quota.limit }}
         </div>
     </div>
 </div>
 
-<div style="margin-top: 2rem;">
-    <h2>Active Conversations</h2>
-    <p style="color: #888; margin-bottom: 1rem;">
+<div class="card">
+    <h2 style="margin-top: 0;">Active Conversations</h2>
+    <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
         Here are the users currently interacting with your bot. Use the toggle to Pause (Human Handoff) or Resume the
         bot for each user.
     </p>
@@ -55,7 +54,7 @@
             {% include "partials/user_session_row.html" %}
             {% else %}
             <tr>
-                <td colspan="3" style="text-align: center; padding: 2rem; color: #666;">
+                <td colspan="3" style="text-align: center; padding: 2rem; color: var(--text-muted);">
                     No active sessions found.
                 </td>
             </tr>

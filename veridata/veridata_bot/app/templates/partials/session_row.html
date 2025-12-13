@@ -1,11 +1,14 @@
 <tr id="session-{{ session.instance_name }}-{{ session.phone_number }}">
-    <td>{{ session.instance_name }}</td>
+    <td style="font-weight: 500;">{{ session.instance_name }}</td>
     <td>{{ session.phone_number }}</td>
-    <td style="font-family: monospace; font-size: 0.9em;">{{ session.session_id }}</td>
+    <td><span
+            style="font-family: monospace; background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 0.85em;">{{
+            session.session_id }}</span></td>
     <td style="text-align: center;">
         <button hx-post="/admin/sessions/toggle/{{ session.instance_name }}/{{ session.phone_number }}"
             hx-target="#session-{{ session.instance_name }}-{{ session.phone_number }}" hx-swap="outerHTML"
-            class="{% if session.is_active %}success{% else %}danger{% endif %}" style="min-width: 100px;">
+            class="btn btn-sm {% if session.is_active %}btn-secondary{% else %}btn-danger{% endif %}"
+            style="min-width: 100px;">
             {% if session.is_active %}
             🤖 Active
             {% else %}
@@ -13,9 +16,11 @@
             {% endif %}
         </button>
     </td>
-    <td>{{ session.updated_at.strftime('%Y-%m-%d %H:%M:%S') if session.updated_at else '' }}</td>
+    <td style="color: var(--text-muted);">{{ session.updated_at.strftime('%Y-%m-%d %H:%M:%S') if session.updated_at else
+        '' }}</td>
     <td style="text-align: right;">
-        <button class="danger" hx-delete="/admin/sessions/{{ session.instance_name }}/{{ session.phone_number }}"
+        <button class="btn btn-sm btn-danger"
+            hx-delete="/admin/sessions/{{ session.instance_name }}/{{ session.phone_number }}"
             hx-target="#session-{{ session.instance_name }}-{{ session.phone_number }}" hx-swap="outerHTML"
             onclick="return confirm('Delete this session? The user memory will be reset.')">
             Reset

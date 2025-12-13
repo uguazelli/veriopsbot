@@ -4,75 +4,49 @@
 <div class="header">
     <h1>Tenant Mappings</h1>
     <div style="display: flex; gap: 1rem;">
-        <a href="/admin/sessions"
-            style="padding: 0.75rem; text-decoration: none; color: var(--text-color); border: 1px solid var(--border-color); border-radius: 0.5rem; background-color: var(--secondary-color);">
+        <a href="/admin/sessions" class="btn btn-secondary">
             Sessions →
         </a>
         <form action="/admin/logout" method="post" style="margin: 0;">
-            <button type="submit"
-                style="background-color: var(--secondary-color); border: 1px solid var(--border-color);">Logout</button>
+            <button type="submit" class="btn btn-secondary">Logout</button>
         </form>
     </div>
 </div>
 
-<form hx-post="/admin/mappings" hx-target="#mappings-body" hx-swap="beforeend" hx-on::after-request="this.reset()">
-    <style>
-        .dashboard-form {
-            background-color: var(--secondary-color);
-            padding: 1.5rem;
-            border-radius: 0.5rem;
-            margin-bottom: 2rem;
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 1rem;
-        }
+<div class="card" style="margin-bottom: 2rem;">
+    <h3 style="margin-top:0;">Add New Bot</h3>
+    <form hx-post="/admin/mappings" hx-target="#mappings-body" hx-swap="beforeend" hx-on::after-request="this.reset()"
+        style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
 
-        @media (min-width: 768px) {
-            .dashboard-form {
-                grid-template-columns: 1fr 1fr;
-            }
-
-            .dashboard-form .full-width {
-                grid-column: span 2;
-            }
-        }
-
-        .dashboard-form button {
-            margin-top: 0.5rem;
-        }
-    </style>
-
-    <div class="dashboard-form">
         <div class="form-control">
             <label>Instance Name (Alias or ID)</label>
-            <input type="text" name="instance_name" placeholder="MyBot OR Evolution Name" required style="width: 100%;">
+            <input type="text" name="instance_name" placeholder="MyBot OR Evolution Name" required>
         </div>
         <div class="form-control">
             <label>Platform Token (Telegram Only - Optional)</label>
-            <input type="text" name="platform_token" placeholder="123456:ABC... (Leave empty for Evolution)"
-                style="width: 100%;">
+            <input type="text" name="platform_token" placeholder="123456:ABC... (Leave empty for Evolution)">
         </div>
         <div class="form-control">
             <label>VeriData RAG Tenant ID</label>
-            <input type="text" name="tenant_id" placeholder="UUID" required style="width: 100%;">
+            <input type="text" name="tenant_id" placeholder="UUID" required>
         </div>
         <div class="form-control">
             <label>Access Key (User Password)</label>
-            <input type="text" name="access_key" placeholder="Optional User Login Key" style="width: 100%;">
+            <input type="text" name="access_key" placeholder="Optional User Login Key">
         </div>
         <div class="form-control">
             <label>Message Limit (Monthly)</label>
-            <input type="number" name="message_limit" value="1000" style="width: 100%;">
+            <input type="number" name="message_limit" value="1000">
         </div>
         <div class="form-control">
             <label>Renewal Date</label>
-            <input type="date" name="renewal_date" style="width: 100%;">
+            <input type="date" name="renewal_date">
         </div>
-        <div class="full-width">
-            <button type="submit" style="width: 100%;">Add Mapping</button>
+        <div class="full-width" style="grid-column: 1 / -1; margin-top: 0.5rem;">
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Add Mapping</button>
         </div>
-    </div>
-</form>
+    </form>
+</div>
 
 <table>
     <thead>

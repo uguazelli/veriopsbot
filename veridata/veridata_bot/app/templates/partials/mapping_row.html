@@ -1,34 +1,40 @@
 <tr>
-    <td style="word-break: break-all;">{{ mapping.instance_name }}</td>
+    <td style="font-weight: 500; font-family: monospace;">{{ mapping.instance_name }}</td>
     <td>
+        <!-- Global Toggle Button -->
         <button hx-post="/admin/mappings/toggle_global/{{ mapping.instance_name }}" hx-target="closest tr"
-            hx-swap="outerHTML" style="border: none; background: none; cursor: pointer; padding: 0;"
-            title="Toggle Global Bot Status">
+            hx-swap="outerHTML"
+            class="btn btn-sm {% if mapping.is_active is false %}btn-danger{% else %}btn-secondary{% endif %}"
+            style="min-width: 80px;" title="Toggle Global Bot Status">
             {% if mapping.is_active is false %}
-            <span style="background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 4px; font-size: 0.8em;">⛔
-                STOP</span>
+            ⛔ STOP
             {% else %}
-            <span style="background: #dcfce7; color: #15803d; padding: 2px 6px; border-radius: 4px; font-size: 0.8em;">✅
-                RUN</span>
+            ✅ RUN
             {% endif %}
         </button>
     </td>
-    <td>{{ mapping.messages_used }} / {{ mapping.message_limit }}</td>
-    <td>{{ mapping.renewal_date }}</td>
+    <td>
+        <span style="font-feature-settings: 'tnum';">{{ mapping.messages_used }} / {{ mapping.message_limit }}</span>
+        <div style="background: #e2e8f0; height: 4px; width: 100%; margin-top: 4px; border-radius: 2px;">
+            {% set pct = mapping.messages_used / mapping.message_limit * 100 if mapping.message_limit > 0 else 0 %}
+            <div
+                style="background: var(--primary-color); height: 100%; width: {{ pct }}%; max-width: 100%; border-radius: 2px;">
+            </div>
+        </div>
+    </td>
+    <td style="font-size: 0.9em; color: var(--text-muted);">{{ mapping.renewal_date }}</td>
     <td>
         {% if mapping.platform_token %}
-        <span
-            style="background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-size: 0.8em;">Telegram</span>
+        <span class="badge badge-telegram">Telegram</span>
         {% else %}
-        <span
-            style="background: #dcfce7; color: #15803d; padding: 2px 6px; border-radius: 4px; font-size: 0.8em;">Evolution</span>
+        <span class="badge badge-evolution">Evolution</span>
         {% endif %}
     </td>
-    <td>{{ mapping.tenant_id }}</td>
-    <td>{{ mapping.access_key or '-' }}</td>
+    <td style="font-family: monospace; font-size: 0.9em; color: var(--text-muted);">{{ mapping.tenant_id[:8] }}...</td>
+    <td style="font-family: monospace;">{{ mapping.access_key or '-' }}</td>
     <td style="text-align: right;">
-        <button class="danger" hx-delete="/admin/mappings/{{ mapping.instance_name }}" hx-target="closest tr"
-            hx-swap="outerHTML" onclick="return confirm('Are you sure?')">
+        <button class="btn btn-sm btn-danger" hx-delete="/admin/mappings/{{ mapping.instance_name }}"
+            hx-target="closest tr" hx-swap="outerHTML" onclick="return confirm('Are you sure?')">
             Delete
         </button>
     </td>

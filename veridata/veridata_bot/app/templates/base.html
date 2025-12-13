@@ -15,16 +15,22 @@
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <style>
         :root {
-            --bg-color: #0f172a;
-            --text-color: #e2e8f0;
-            --primary-color: #3b82f6;
-            --secondary-color: #1e293b;
-            --border-color: #334155;
+            /* Light Theme Variables */
+            --bg-color: #f8fafc;
+            --text-color: #1e293b;
+            --primary-color: #2563eb;
+            --primary-hover: #1d4ed8;
+            --secondary-color: #ffffff;
+            --border-color: #e2e8f0;
             --danger-color: #ef4444;
+            --danger-hover: #dc2626;
+            --success-color: #10b981;
+            --success-hover: #059669;
+            --text-muted: #64748b;
         }
 
         body {
-            font-family: system-ui, -apple-system, sans-serif;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
             margin: 0;
@@ -35,44 +41,137 @@
 
         .container {
             width: 100%;
-            max-width: 800px;
+            max-width: 1200px;
+            /* Wider layout */
             padding: 2rem;
+            box-sizing: border-box;
         }
 
         h1,
-        h2 {
-            margin-bottom: 1.5rem;
+        h2,
+        h3 {
+            margin-bottom: 1rem;
+            color: #0f172a;
         }
 
+        /* --- Components --- */
+
+        /* Inputs */
         input,
-        button {
+        select,
+        textarea {
             padding: 0.75rem;
             border-radius: 0.5rem;
             border: 1px solid var(--border-color);
-            background-color: var(--secondary-color);
+            background-color: #fff;
             color: var(--text-color);
-            font-size: 1rem;
+            font-size: 0.95rem;
+            transition: border-color 0.2s;
         }
 
-        button {
+        input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.6rem 1.2rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+            text-decoration: none;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
             background-color: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .btn-secondary {
+            background-color: white;
+            color: var(--text-color);
+            border-color: var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background-color: #f1f5f9;
+        }
+
+        .btn-danger {
+            background-color: var(--danger-color);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background-color: var(--danger-hover);
+        }
+
+        .btn-sm {
+            padding: 0.4rem 0.8rem;
+            font-size: 0.85rem;
+        }
+
+        /* Native button override to match if class not applied */
+        button:not(.btn) {
+            /* Fallback for buttons without classes yet, try to look decent */
+            padding: 0.75rem;
+            border-radius: 0.5rem;
             border: none;
             cursor: pointer;
             font-weight: 600;
+            background-color: var(--primary-color);
+            color: white;
         }
 
-        button:hover {
-            opacity: 0.9;
+        /* Badges / Pills */
+        .badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
         }
 
-        button.danger {
-            background-color: var(--danger-color);
+        .badge-telegram {
+            background-color: #e0f2fe;
+            color: #0284c7;
         }
 
+        .badge-evolution {
+            background-color: #dcfce7;
+            color: #16a34a;
+        }
+
+        .badge-error {
+            background-color: #fee2e2;
+            color: #dc2626;
+        }
+
+        /* Tables */
         table {
             width: 100%;
-            border-collapse: collapse;
+            border-collapse: separate;
+            border-spacing: 0;
             margin-top: 1rem;
+            background: white;
+            border-radius: 0.75rem;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
         }
 
         th,
@@ -83,37 +182,46 @@
         }
 
         th {
+            background-color: #f8fafc;
             font-weight: 600;
-            color: #94a3b8;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
         }
 
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* Utils */
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 2rem;
-        }
-
-        .form-group {
-            display: flex;
-            gap: 1rem;
-            margin-bottom: 2rem;
-            background: var(--secondary-color);
-            padding: 1.5rem;
-            border-radius: 0.75rem;
-            align-items: flex-end;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
         }
 
         .form-control {
             display: flex;
             flex-direction: column;
             gap: 0.5rem;
-            flex: 1;
         }
 
         label {
             font-size: 0.875rem;
-            color: #94a3b8;
+            font-weight: 500;
+            color: var(--text-color);
+        }
+
+        .card {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
         }
     </style>
 </head>
