@@ -4,8 +4,7 @@
         '-' }}</td>
     <td style="text-align: center;">
         <button hx-post="/user/toggle/{{ session.phone_number }}" hx-target="closest tr" hx-swap="outerHTML"
-            class="btn btn-sm {% if session.is_active is false %}btn-danger{% else %}btn-secondary{% endif %}"
-            style="min-width: 100px;">
+            class="btn btn-sm btn-secondary" style="min-width: 100px; white-space: nowrap;">
             {% if session.is_active is false %}
             ⏸️ Paused
             {% else %}

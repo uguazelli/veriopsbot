@@ -20,21 +20,23 @@
     </p>
 </div>
 
-<table>
-    <thead>
-        <tr>
-            <th>Instance</th>
-            <th>Phone Number</th>
-            <th>Session ID</th>
-            <th style="text-align: center;">Status</th>
-            <th>Last Active</th>
-            <th style="text-align: right;">Actions</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for session in sessions %}
-        {% include "partials/session_row.html" %}
-        {% endfor %}
-    </tbody>
-</table>
+<div class="table-responsive">
+    <table>
+        <thead>
+            <tr>
+                <th>Instance</th>
+                <th>Phone Number</th>
+                <th>Session ID</th>
+                <th style="text-align: center;">Status</th>
+                <th>Last Active</th>
+                <th style="text-align: right;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for session in sessions %}
+            {% include "partials/session_row.html" %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 {% endblock %}

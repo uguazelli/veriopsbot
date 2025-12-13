@@ -7,8 +7,7 @@
     <td style="text-align: center;">
         <button hx-post="/admin/sessions/toggle/{{ session.instance_name }}/{{ session.phone_number }}"
             hx-target="#session-{{ session.instance_name }}-{{ session.phone_number }}" hx-swap="outerHTML"
-            class="btn btn-sm {% if session.is_active %}btn-secondary{% else %}btn-danger{% endif %}"
-            style="min-width: 100px;">
+            class="btn btn-sm btn-secondary" style="min-width: 100px; white-space: nowrap;">
             {% if session.is_active %}
             🤖 Active
             {% else %}

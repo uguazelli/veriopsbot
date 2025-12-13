@@ -48,23 +48,25 @@
     </form>
 </div>
 
-<table>
-    <thead>
-        <tr>
-            <th>Instance Name (Alias)</th>
-            <th>Status</th>
-            <th>Usage</th>
-            <th>Renewal</th>
-            <th>Type</th>
-            <th>Tenant ID</th>
-            <th>Access Key</th>
-            <th style="text-align: right;">Actions</th>
-        </tr>
-    </thead>
-    <tbody id="mappings-body">
-        {% for mapping in mappings %}
-        {% include "partials/mapping_row.html" %}
-        {% endfor %}
-    </tbody>
-</table>
+<div class="table-responsive">
+    <table>
+        <thead>
+            <tr>
+                <th>Instance Name (Alias)</th>
+                <th>Status</th>
+                <th>Usage</th>
+                <th>Renewal</th>
+                <th>Type</th>
+                <th>Tenant ID</th>
+                <th>Access Key</th>
+                <th style="text-align: right;">Actions</th>
+            </tr>
+        </thead>
+        <tbody id="mappings-body">
+            {% for mapping in mappings %}
+            {% include "partials/mapping_row.html" %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 {% endblock %}

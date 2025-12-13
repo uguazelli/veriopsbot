@@ -3,9 +3,8 @@
     <td>
         <!-- Global Toggle Button -->
         <button hx-post="/admin/mappings/toggle_global/{{ mapping.instance_name }}" hx-target="closest tr"
-            hx-swap="outerHTML"
-            class="btn btn-sm {% if mapping.is_active is false %}btn-danger{% else %}btn-secondary{% endif %}"
-            style="min-width: 80px;" title="Toggle Global Bot Status">
+            hx-swap="outerHTML" class="btn btn-sm btn-secondary" style="min-width: 80px; white-space: nowrap;"
+            title="Toggle Global Bot Status">
             {% if mapping.is_active is false %}
             ⛔ STOP
             {% else %}

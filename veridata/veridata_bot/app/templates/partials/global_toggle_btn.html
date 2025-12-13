@@ -1,8 +1,8 @@
-<button hx-post="/user/toggle_global" hx-swap="outerHTML"
-    class="btn {% if is_globally_active %}btn-secondary{% else %}btn-danger{% endif %}" style="font-weight: 600;">
+<button hx-post="/user/toggle_global" hx-swap="outerHTML" class="btn btn-secondary"
+    style="font-weight: 600; white-space: nowrap;">
     {% if is_globally_active %}
-    <span style="font-size: 1.25rem;">🤖</span> Global: ON
+    <span>🤖</span> Global: ON
     {% else %}
-    <span style="font-size: 1.25rem;">⛔</span> Global: OFF
+    <span>⛔</span> Global: OFF
     {% endif %}
 </button>

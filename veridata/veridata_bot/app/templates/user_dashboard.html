@@ -41,26 +41,28 @@
         bot for each user.
     </p>
 
-    <table>
-        <thead>
-            <tr>
-                <th>Phone Number</th>
-                <th>Last Active</th>
-                <th style="text-align: center;">Bot Status</th>
-            </tr>
-        </thead>
-        <tbody id="sessions-body">
-            {% for session in sessions %}
-            {% include "partials/user_session_row.html" %}
-            {% else %}
-            <tr>
-                <td colspan="3" style="text-align: center; padding: 2rem; color: var(--text-muted);">
-                    No active sessions found.
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th>Phone Number</th>
+                    <th>Last Active</th>
+                    <th style="text-align: center;">Bot Status</th>
+                </tr>
+            </thead>
+            <tbody id="sessions-body">
+                {% for session in sessions %}
+                {% include "partials/user_session_row.html" %}
+                {% else %}
+                <tr>
+                    <td colspan="3" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                        No active sessions found.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 {% endblock %}

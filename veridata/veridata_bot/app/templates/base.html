@@ -223,12 +223,32 @@
             padding: 1.5rem;
             box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
         }
+
+        /* Responsive Table Wrapper */
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            border-radius: 0.75rem;
+            border: 1px solid var(--border-color);
+            /* Move border to wrapper */
+        }
+
+        .table-responsive table {
+            border: none;
+            border-radius: 0;
+            margin-top: 0;
+            box-shadow: none;
+        }
     </style>
 </head>
 
 <body>
     <div class="container">
-        {% block content %}{% endblock %}
+        <div style="min-height: 80vh;">
+            {% block content %}{% endblock %}
+        </div>
+
+        {% include "partials/footer.html" %}
     </div>
 </body>
 
