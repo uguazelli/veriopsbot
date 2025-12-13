@@ -22,11 +22,11 @@
         style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
 
         <div class="form-control">
-            <label>Instance Name (Alias or ID)</label>
-            <input type="text" name="instance_name" placeholder="MyBot OR Evolution Name" required>
+            <label>Evolution Instance or Telegram Alias</label>
+            <input type="text" name="instance_name" placeholder="MyBot" required>
         </div>
         <div class="form-control">
-            <label>Platform Token (Telegram Only - Optional)</label>
+            <label>Telegram Platform Token (Optional)</label>
             <input type="text" name="platform_token" placeholder="123456:ABC... (Leave empty for Evolution)">
         </div>
         <div class="form-control">
@@ -34,8 +34,8 @@
             <input type="text" name="tenant_id" placeholder="UUID" required>
         </div>
         <div class="form-control">
-            <label>Access Key (User Password)</label>
-            <input type="text" name="access_key" placeholder="Optional User Login Key">
+            <label>User Password</label>
+            <input type="text" name="access_key" placeholder="1234ABDC">
         </div>
         <div class="form-control">
             <label>Message Limit (Monthly)</label>
