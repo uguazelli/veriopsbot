@@ -1,7 +1,10 @@
 import httpx
+import asyncio
 from app.services import bot_service
 from app import database
 import os
+
+INTEGRATOR_URL = os.getenv("INTEGRATOR_URL", "http://veridata.integrator:8000/api/v1/leads")
 
 TELEGRAM_API_BASE = "https://api.telegram.org/bot"
 
@@ -20,7 +23,44 @@ async def send_message(token: str, chat_id: str, text: str):
         except Exception as e:
             print(f"❌ Telegram Send Failed: {e}")
 
+async def sync_lead(*, instance: str, user_id: str, first_name: str, last_name: str, username: str):
+    """
+    Fire-and-forget sync to Veridata Integrator.
+    """
+    try:
+        payload = {
+            "firstName": first_name or "Unknown",
+            "lastName": last_name or username or "TelegramUser",
+            "status": "New",
+            "source": "Call", # Hardcoded per user request
+            "opportunityAmount": 0,
+            "opportunityAmountCurrency": "USD",
+            "emailAddress": None,
+            "phoneNumber": None, # Telegram doesn't share phone numbers easily
+            "description": f"Telegram ID: {user_id} | Username: {username}"
+        }
+
+        # Authenticate using the Bot Instance Alias (mapped to Client)
+        # For Telegram, the 'token' is the instance identifier.
+        headers = {
+            "X-Bot-Instance-Alias": instance,
+            "Content-Type": "application/json"
+        }
+
+        async with httpx.AsyncClient() as client:
+            print(f"🔄 Syncing lead for Telegram:{user_id} to Integrator...")
+            # We set a short timeout because we don't want to hang background tasks too long
+            resp = await client.post(INTEGRATOR_URL, json=payload, headers=headers, timeout=5.0)
+            if resp.status_code >= 400:
+                print(f"⚠️ Integrator Sync Failed: {resp.status_code} - {resp.text}")
+            else:
+                print(f"✅ Lead Synced: {resp.json()}")
+
+    except Exception as e:
+        print(f"❌ Lead Sync Error: {str(e)}")
+
 async def process_webhook(token: str, payload: dict):
+
     """
     Process Telegram Webhook Update.
     The 'token' identifies the bot instance (and thus the tenant).
@@ -34,6 +74,12 @@ async def process_webhook(token: str, payload: dict):
     chat_id = str(message.get("chat", {}).get("id"))
     user_text = message.get("text")
 
+    # Extract identity info for sync
+    chat_info = message.get("chat", {})
+    first_name = chat_info.get("first_name", "")
+    last_name = chat_info.get("last_name", "")
+    username = chat_info.get("username", "")
+
     if not chat_id or not user_text:
          return {"status": "ignored", "reason": "no_chat_id_or_text"}
 
@@ -43,6 +89,15 @@ async def process_webhook(token: str, payload: dict):
     # Note: If we want to support "Commanding the bot" via admin account on Telegram, we'd need to identify the admin ID.
     # For now, treat all inputs as user inputs.
     from_me = False
+
+    # Sync Lead (async)
+    asyncio.create_task(sync_lead(
+        instance=token, # Token is the alias here
+        user_id=chat_id,
+        first_name=first_name,
+        last_name=last_name,
+        username=username
+    ))
 
     # 2. Look up Platform Token (if Alias is used)
     platform_token = await database.get_platform_token(token)

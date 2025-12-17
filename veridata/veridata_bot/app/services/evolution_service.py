@@ -1,10 +1,14 @@
 import httpx
 import os
 import base64
+import asyncio
 from app.services import rag_service, bot_service
+
 
 EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY", "")
 EVOLUTION_URL = os.getenv("EVOLUTION_URL", "https://dev-evolution.veridatapro.com")
+INTEGRATOR_URL = os.getenv("INTEGRATOR_URL", "http://veridata.integrator:8000/api/v1/leads")
+
 
 async def mark_message_read(*, instance: str, message_id: str, phone: str):
     url = f"{EVOLUTION_URL}/chat/markMessageAsRead/{instance}"
@@ -88,7 +92,46 @@ async def message_whatsapp(*, instance: str, phone: str, message: str, delay: in
         except Exception as e:
             print(f"❌ Request Failed: {str(e)}")
 
+async def sync_lead(*, instance: str, phone: str, push_name: str):
+    """
+    Fire-and-forget sync to Veridata Integrator.
+    """
+    try:
+        # Simple name splitting logic
+        parts = push_name.strip().split(" ", 1)
+        first_name = parts[0] if parts else "Unknown"
+        last_name = parts[1] if len(parts) > 1 else first_name
+
+        payload = {
+            "firstName": first_name,
+            "lastName": last_name,
+            "status": "New",
+            "source": "Call", # Hardcoded per user request
+            "opportunityAmount": 0,
+            "opportunityAmountCurrency": "USD",
+            "emailAddress": None, # Not available in webhook usually
+            "phoneNumber": f"+{phone}" # Ensure E.164-ish format
+        }
+
+        # We authenticate using the Instance Alias (which assumes the integrator has mapped this alias to a Client)
+        headers = {
+            "X-Bot-Instance-Alias": instance,
+            "Content-Type": "application/json"
+        }
+
+        async with httpx.AsyncClient() as client:
+            print(f"🔄 Syncing lead for {phone} to Integrator...")
+            resp = await client.post(INTEGRATOR_URL, json=payload, headers=headers)
+            if resp.status_code >= 400:
+                print(f"⚠️ Integrator Sync Failed: {resp.status_code} - {resp.text}")
+            else:
+                print(f"✅ Lead Synced: {resp.json()}")
+
+    except Exception as e:
+        print(f"❌ Lead Sync Error: {str(e)}")
+
 async def process_webhook(payload: dict):
+
     # 1. Filter Event Type
     event_type = payload.get("event")
     if event_type != "messages.upsert":
@@ -114,7 +157,9 @@ async def process_webhook(payload: dict):
 
     phone_number = remote_jid.split("@")[0]
     instance = payload.get("instance")
+    push_name = data.get("pushName") or "Unknown User"
     from_me = key.get("fromMe", False)
+
 
     # Handle Audio
     if not user_text and message_content.get("audioMessage"):
@@ -137,6 +182,11 @@ async def process_webhook(payload: dict):
 
     if not user_text:
         return {"status": "ignored", "reason": "no_text_found"}
+
+    # 2.5 Fire Async Sync (Do not await)
+    if not from_me:
+        asyncio.create_task(sync_lead(instance=instance, phone=phone_number, push_name=push_name))
+
 
 
     # 3. Define Callback for Replying

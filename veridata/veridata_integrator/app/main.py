@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, Header
+from typing import Optional
 from sqladmin import Admin, ModelView
 from app.database import engine, init_db, get_session
 from app.models import Client, IntegrationSource, IntegrationDestination, IdentityMap
@@ -32,21 +33,53 @@ admin.add_view(IdentityMapAdmin)
 async def on_startup():
     await init_db()
 
-async def get_client_by_key(
-    x_veridata_client_key: str = Header(...),
+async def get_client_by_key_or_alias(
+    x_veridata_client_key: Optional[str] = Header(None),
+    x_bot_instance_alias: Optional[str] = Header(None),
     session: AsyncSession = Depends(get_session)
 ) -> Client:
-    statement = select(Client).where(Client.api_key == x_veridata_client_key)
-    result = await session.exec(statement)
-    client = result.first()
-    if not client:
-        raise HTTPException(status_code=401, detail="Invalid Client Key")
-    return client
+    # 1. Try API Key
+    if x_veridata_client_key:
+        statement = select(Client).where(Client.api_key == x_veridata_client_key)
+        result = await session.exec(statement)
+        client = result.first()
+        if client:
+            return client
+
+    # 2. Try Instance Alias (Client Field)
+    if x_bot_instance_alias:
+        # 2a. Check Client.bot_instance_alias directly
+        statement = select(Client).where(Client.bot_instance_alias == x_bot_instance_alias)
+        result = await session.exec(statement)
+        client = result.first()
+        if client:
+            return client
+
+        # 2b. Check IntegrationSource.config -> 'bot_instance_alias'
+        # We search if ANY source has this alias in its config, then return that source's client.
+        from sqlalchemy import text
+        # Using cast to ensure we just query the JSON safely
+        # Note: In postgres, we can use ->> operator.
+        query = select(IntegrationSource).where(text("config->>'bot_instance_alias' = :alias")).params(alias=x_bot_instance_alias)
+        result = await session.exec(query)
+        source = result.first()
+        if source:
+             # Lazy load client? SQLModel defaults are lazy=False often unless configured.
+             # But here we need to fetch the client explicitly if not loaded.
+             # Ideally we join, but let's just fetch by ID for safety.
+             client_stmt = select(Client).where(Client.id == source.client_id)
+             client_res = await session.exec(client_stmt)
+             client = client_res.first()
+             if client:
+                 return client
+
+    # 3. Failed
+    raise HTTPException(status_code=401, detail="Invalid Client Key or Instance Alias")
 
 @app.post("/api/v1/leads")
 async def create_lead(
     lead_data: LeadCreateSchema,
-    client: Client = Depends(get_client_by_key),
+    client: Client = Depends(get_client_by_key_or_alias),
     session: AsyncSession = Depends(get_session)
 ):
     # 1. Find EspoCRM destination for this client
@@ -72,7 +105,15 @@ async def create_lead(
     if not base_url.endswith("/"):
         base_url += "/"
 
+    # Ensure protocol
+    if not base_url.startswith("http://") and not base_url.startswith("https://"):
+        base_url = f"http://{base_url}"
+
     target_url = f"{base_url}api/v1/Lead"
+
+    # DEBUG LOGGING
+    payload_dump = lead_data.model_dump()
+    print(f"🚀 FORWARDING TO ESPOCRM:\nURL: {target_url}\nPAYLOAD: {payload_dump}")
 
     # 2. Forward request to EspoCRM
     headers = {
@@ -82,7 +123,7 @@ async def create_lead(
 
     async with httpx.AsyncClient() as ac:
         try:
-            response = await ac.post(target_url, json=lead_data.model_dump(), headers=headers)
+            response = await ac.post(target_url, json=payload_dump, headers=headers)
         except Exception as e:
              raise HTTPException(status_code=502, detail=f"Failed to connect to EspoCRM: {str(e)}")
 

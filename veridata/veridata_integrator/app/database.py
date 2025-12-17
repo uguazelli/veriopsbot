@@ -1,5 +1,6 @@
 from sqlmodel import SQLModel, create_engine
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import sessionmaker
 import os
 from dotenv import load_dotenv
@@ -12,7 +13,6 @@ engine = create_async_engine(DATABASE_URL, echo=True, future=True)
 
 async def init_db():
     async with engine.begin() as conn:
-        # await conn.run_sync(SQLModel.metadata.drop_all)
         # Custom migration for dev: Add columns safely
         from sqlalchemy import text
         # We use IF NOT EXISTS to avoid transaction abortion if the column is already there.

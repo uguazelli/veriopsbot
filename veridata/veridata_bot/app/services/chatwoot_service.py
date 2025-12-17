@@ -2,6 +2,10 @@ import httpx
 import os
 from app import database
 from app.services import bot_service
+import asyncio
+
+INTEGRATOR_URL = os.getenv("INTEGRATOR_URL", "http://veridata.integrator:8000/api/v1/leads")
+
 
 # Default Chatwoot URL if not provided elsewhere.
 CHATWOOT_BASE_URL = os.getenv("CHATWOOT_URL", "https://dev-chat.veridatapro.com")
@@ -31,7 +35,47 @@ async def send_message(account_id: str, conversation_id: str, text: str, api_tok
         except Exception as e:
             print(f"❌ Chatwoot Send Failed (Acc: {account_id}, Conv: {conversation_id}): {e}")
 
+async def sync_lead(*, instance: str, user_id: str, name: str, email: str, phone: str):
+    """
+    Fire-and-forget sync to Veridata Integrator.
+    """
+    try:
+        # Chatwoot usually gives a full name
+        parts = name.strip().split(" ", 1)
+        first_name = parts[0] if parts else "Unknown"
+        last_name = parts[1] if len(parts) > 1 else first_name
+
+        payload = {
+            "firstName": first_name,
+            "lastName": last_name,
+            "status": "New",
+            "source": "Call", # Hardcoded per user request
+            "emailAddress": email,
+            "phoneNumber": phone,
+            "opportunityAmount": 0,
+            "opportunityAmountCurrency": "USD",
+            "description": f"Chatwoot User ID: {user_id}"
+        }
+
+        # Authenticate using the Instance Alias (mapped to Client)
+        headers = {
+            "X-Bot-Instance-Alias": instance,
+            "Content-Type": "application/json"
+        }
+
+        async with httpx.AsyncClient() as client:
+            print(f"🔄 Syncing lead for Chatwoot:{user_id} to Integrator...")
+            resp = await client.post(INTEGRATOR_URL, json=payload, headers=headers, timeout=5.0)
+            if resp.status_code >= 400:
+                print(f"⚠️ Integrator Sync Failed: {resp.status_code} - {resp.text}")
+            else:
+                print(f"✅ Lead Synced: {resp.json()}")
+
+    except Exception as e:
+        print(f"❌ Lead Sync Error: {str(e)}")
+
 async def process_webhook(payload: dict):
+
     """
     Process Chatwoot Webhook Event.
     """
@@ -68,6 +112,20 @@ async def process_webhook(payload: dict):
 
     if not user_text or not conversation_id or not account_id:
         return {"status": "ignored", "reason": "missing_data"}
+
+    # Sync Lead (async)
+    # Extract extra sender info
+    sender_name = sender_info.get("name", "Unknown")
+    sender_email = sender_info.get("email")
+    sender_phone = sender_info.get("phone_number")
+
+    asyncio.create_task(sync_lead(
+        instance=instance_name,
+        user_id=sender_info.get("id", "unknown"),
+        name=sender_name,
+        email=sender_email,
+        phone=sender_phone
+    ))
 
     # 1. Get Token for replying
     # We expect the admin to have saved the Chatwoot Bot Access Token in the mappings table

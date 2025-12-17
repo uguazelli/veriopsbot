@@ -9,4 +9,4 @@ class LeadCreateSchema(BaseModel):
     opportunityAmount: Optional[float] = 0
     opportunityAmountCurrency: Optional[str] = "USD"
     emailAddress: Optional[str] = None
-    phoneNumber: str
+    phoneNumber: Optional[str] = None
