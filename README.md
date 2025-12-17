@@ -99,3 +99,7 @@ WHERE email = 'admin@veridatapro.com'
 -  `docker compose logs -f <service>` – tail logs for either stack.
 -  `docker compose down` – stop and remove containers (volumes persist unless you add `-v`).
 -  `docker compose ps` – check service health.
+
+
+
+Add the number to the company name to avoid Whatsapp ban

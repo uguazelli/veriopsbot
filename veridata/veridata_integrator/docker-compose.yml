@@ -1,0 +1,21 @@
+services:
+  veridata_integrator:
+    build:
+      context: .
+    container_name: veridata.integrator
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@veridata.postgres:5432/${POSTGRES_DB}
+    ports:
+      - "${INTEGRATOR_PORT:-8000}:8000"
+    volumes:
+      - .:/app
+    networks:
+      veridata.network:
+        aliases:
+          - veridata.integrator
+    env_file:
+      - .env
+
+networks:
+  veridata.network:
+    external: true
