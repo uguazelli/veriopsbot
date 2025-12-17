@@ -8,6 +8,9 @@ class Client(SQLModel, table=True):
     name: str
     api_key: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
+    rag_tenant_id: Optional[uuid.UUID] = Field(default=None)
+    bot_instance_alias: Optional[str] = Field(default=None)
+
     sources: List["IntegrationSource"] = Relationship(back_populates="client")
     destinations: List["IntegrationDestination"] = Relationship(back_populates="client")
 

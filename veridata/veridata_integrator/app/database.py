@@ -13,6 +13,13 @@ engine = create_async_engine(DATABASE_URL, echo=True, future=True)
 async def init_db():
     async with engine.begin() as conn:
         # await conn.run_sync(SQLModel.metadata.drop_all)
+        # Custom migration for dev: Add columns safely
+        from sqlalchemy import text
+        # We use IF NOT EXISTS to avoid transaction abortion if the column is already there.
+        # Note: We need to execute these as separate statements or ensure syntax is valid.
+        await conn.execute(text("ALTER TABLE client ADD COLUMN IF NOT EXISTS rag_tenant_id UUID"))
+        await conn.execute(text("ALTER TABLE client ADD COLUMN IF NOT EXISTS bot_instance_alias VARCHAR"))
+
         await conn.run_sync(SQLModel.metadata.create_all)
 
 async def get_session() -> AsyncSession:

@@ -11,7 +11,7 @@ import httpx
 app = FastAPI(title="Veridata Integrator")
 
 class ClientAdmin(ModelView, model=Client):
-    column_list = [Client.id, Client.name, Client.api_key]
+    column_list = [Client.id, Client.name, Client.api_key, Client.rag_tenant_id, Client.bot_instance_alias]
 
 class SourceAdmin(ModelView, model=IntegrationSource):
     column_list = [IntegrationSource.id, IntegrationSource.type, IntegrationSource.client]
