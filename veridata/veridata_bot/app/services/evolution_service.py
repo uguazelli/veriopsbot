@@ -111,7 +111,7 @@ async def sync_lead(*, instance: str, phone: str, push_name: str):
             "source": "Call",
             "opportunityAmount": 0,
             "opportunityAmountCurrency": "USD",
-            "emailAddress": "unknunknown", # Not available in webhook usually, but required by API
+            "emailAddress": "", # Not available in webhook usually, but required by API
             "phoneNumber": f"+{phone}" # Ensure E.164-ish format
         }
 
