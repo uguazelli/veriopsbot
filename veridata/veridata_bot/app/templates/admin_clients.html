@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Clients - Veridata Bot{% endblock %}
+
+{% block content %}
+<div class="top-nav">
+    <div style="font-weight: bold; font-size: 1.2rem;">Veridata Bot Admin</div>
+    <div class="nav-links">
+        <a href="/admin/clients" class="active">Clients</a>
+        <a href="/auth/logout">Logout</a>
+    </div>
+</div>
+
+<div class="container dashboard-grid">
+    <div class="sidebar">
+        <h3>Menu</h3>
+        <ul style="list-style: none; padding: 0;">
+            <li style="margin-bottom: 0.5rem;"><a href="/admin/clients"
+                    style="text-decoration: none; color: inherit; font-weight: bold;">Clients</a></li>
+            <!-- <li style="margin-bottom: 0.5rem;"><a href="#" style="text-decoration: none; color: inherit;">Users</a></li> -->
+        </ul>
+    </div>
+    <div class="content">
+        <h2>Clients</h2>
+
+        <div id="clients-list">
+            {% for client in clients %}
+            <div class="card"
+                style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong>{{ client.name }}</strong> <small>({{ client.slug }})</small>
+                </div>
+                <div>
+                    <a href="/admin/clients/{{ client.id }}/integrations" class="btn" style="font-size: 0.8rem;">Manage
+                        Integrations</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="card" style="margin-top: 2rem; background-color: #f9fafb;">
+            <h3>Add New Client</h3>
+            <form hx-post="/admin/clients/create" hx-target="#clients-list" hx-swap="beforeend">
+                <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 1rem; align-items: end;">
+                    <div>
+                        <label>Name</label>
+                        <input type="text" name="name" placeholder="Acme Corp" required>
+                    </div>
+                    <div>
+                        <label>Slug</label>
+                        <input type="text" name="slug" placeholder="acme" required>
+                    </div>
+                    <button type="submit">Add Client</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

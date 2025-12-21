@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard - Veridata Bot{% endblock %}
+
+{% block content %}
+<div class="top-nav">
+    <div style="font-weight: bold; font-size: 1.2rem;">Veridata Bot Admin</div>
+    <div class="nav-links">
+        <a href="/admin/dashboard">Dashboard</a>
+        <a href="/auth/logout">Logout</a>
+    </div>
+</div>
+
+<div class="container dashboard-grid">
+    <div class="sidebar">
+        <h3>Menu</h3>
+        <ul style="list-style: none; padding: 0;">
+            <li style="margin-bottom: 0.5rem;"><a href="#" style="text-decoration: none; color: inherit;">General
+                    Settings</a></li>
+            <li style="margin-bottom: 0.5rem;"><a href="#"
+                    style="text-decoration: none; color: inherit;">Integrations</a></li>
+            <li style="margin-bottom: 0.5rem;"><a href="#" style="text-decoration: none; color: inherit;">Users</a></li>
+        </ul>
+    </div>
+    <div class="content">
+        <h2>System Configuration</h2>
+
+        <div id="settings-list">
+            <!-- Settings will be loaded here or rendered server side -->
+            {% for config in configs %}
+            <div class="card" style="margin-bottom: 1rem;">
+                <form hx-post="/admin/config/update" hx-swap="outerHTML">
+                    <input type="hidden" name="id" value="{{ config.id }}">
+                    <div style="display: flex; gap: 1rem; align-items: center;">
+                        <strong style="width: 150px;">{{ config.platform }}</strong>
+                        <div style="flex-grow: 1;">
+                            <label style="font-size: 0.8rem; color: #666;">{{ config.key }}</label>
+                            <input type="text" name="value" value="{{ config.value }}" style="width: 100%;">
+                        </div>
+                        <button type="submit">Save</button>
+                    </div>
+                </form>
+            </div>
+            {% endfor %}
+
+            <!-- Add New Setting -->
+            <div class="card" style="margin-top: 2rem; background-color: #f9fafb;">
+                <h3>Add New Configuration</h3>
+                <form hx-post="/admin/config/create" hx-target="#settings-list" hx-swap="beforeend">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 1rem; align-items: end;">
+                        <div>
+                            <label>Platform</label>
+                            <input type="text" name="platform" placeholder="e.g. chatwoot" required>
+                        </div>
+                        <div>
+                            <label>Key</label>
+                            <input type="text" name="key" placeholder="e.g. api_url" required>
+                        </div>
+                        <div>
+                            <label>Value</label>
+                            <input type="text" name="value" placeholder="Value..." required>
+                        </div>
+                        <button type="submit">Add</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

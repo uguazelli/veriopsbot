@@ -1,45 +1,21 @@
 {% extends "base.html" %}
 
+{% block title %}Login - Veridata Bot{% endblock %}
+
 {% block content %}
-<div class="card" style="max-width: 400px; margin: 4rem auto; border-top: 6px solid var(--text-color);">
-    <div style="text-align: center; margin-bottom: 2rem;">
-        <img src="/static/logo.png" alt="VeriData" style="height: 64px; width: auto; opacity: 0.9;">
-    </div>
-
-    <div
-        style="background-color: #f1f5f9; padding: 0.5rem; border-radius: 0.5rem; text-align: center; margin-bottom: 2rem;">
-        <h1 style="margin: 0; font-size: 1.25rem; color: var(--text-color);">System Administration</h1>
-        <p
-            style="margin: 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); font-weight: 600; margin-top: 0.25rem;">
-            Authorized Access Only</p>
-    </div>
-
-    <form action="/admin/login" method="post" style="display: flex; flex-direction: column; gap: 1.25rem;">
-        <div class="form-control">
-            <label style="font-weight: 600;">Admin Username</label>
-            <input type="text" name="username" required autofocus style="background-color: #f8fafc;">
+<div class="card" style="max-width: 400px; width: 100%;">
+    <h2 style="text-align: center;">Login</h2>
+    <div id="login-error"></div>
+    <form hx-post="/auth/login" hx-target="#login-error" hx-swap="innerHTML">
+        <div>
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" required>
         </div>
-        <div class="form-control">
-            <label style="font-weight: 600;">Password</label>
-            <input type="password" name="password" required style="background-color: #f8fafc;">
+        <div>
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required>
         </div>
-        <button type="submit" class="btn"
-            style="width: 100%; margin-top: 0.5rem; background-color: var(--text-color); color: white;">
-            🔒 Admin Login
-        </button>
-        {% if error %}
-        <p
-            style="color: var(--danger-color); text-align: center; background: #fee2e2; padding: 0.5rem; border-radius: 0.5rem;">
-            {{ error }}</p>
-        {% endif %}
+        <button type="submit" style="width: 100%; margin-top: 1rem;">Sign In</button>
     </form>
-
-    <div
-        style="margin-top: 2.5rem; text-align: center; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
-        <a href="/login"
-            style="font-size: 0.9rem; color: var(--primary-color); text-decoration: none; font-weight: 500;">
-            ← Go to User Login
-        </a>
-    </div>
 </div>
 {% endblock %}

@@ -1,6 +1,6 @@
 services:
   pgadmin:
-    container_name: pgadmin
+    container_name: veridata.pgadmin
     image: dpage/pgadmin4:latest
     restart: always
     environment:

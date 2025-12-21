@@ -1,7 +1,7 @@
 services:
   postgres:
     image: pgvector/pgvector:pg18
-    container_name: veridata
+    container_name: veridata.postgres
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER}

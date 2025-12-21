@@ -2,21 +2,36 @@ name: veridata
 
 services:
   veridata_bot:
-    build:
-      context: .
+    build: .
     container_name: veridata.bot
-    command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"]
+    volumes:
+      - .:/app
+      - /app/.venv
+    ports:
+      - "${VDBOT_PORT:-4019}:4019"
     env_file:
       - .env
     environment:
-      - RAG_API_URL=${RAG_API_URL}
-    ports:
-      - "${VDBOT_PORT:-8080}:8080"
-    volumes:
-      - .:/workspace
-    working_dir: /workspace
-    stdin_open: true
-    tty: true
+      - POSTGRES_HOST=veridata.postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - ADMIN_USER=${ADMIN_USER}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+
+    # Optional: Watch Configuration
+    develop:
+      watch:
+        - action: sync+restart
+          path: .
+          target: /app
+          ignore:
+            - .venv/
+            - __pycache__/
+            - .git/
+            - .env
+
     networks:
       veridata.network:
         aliases:

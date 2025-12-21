@@ -1,36 +1,51 @@
-from fastapi import FastAPI, Request
-from app.routers import admin, user_settings, telegram, evolution, chatwoot
-from app.services import telegram_service
-from app import database
-from contextlib import asynccontextmanager
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
-import os
+from app.core.config import settings
+from app.core.database import engine, Base
+from app.models import * # Import models to register them
+import logging
+from contextlib import asynccontextmanager
+from app.services.scheduler import summary_scheduler
+import asyncio
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await database.init_db()
+    # Create tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-    # --- Auto-Register Telegram Webhooks on Startup ---
-    await telegram_service.register_webhooks()
-    # --------------------------------------------------
+    # Start scheduler
+    task = asyncio.create_task(summary_scheduler())
 
     yield
-    await database.close_db()
 
-app = FastAPI(lifespan=lifespan)
+    # Cancel scheduler on shutdown
+    task.cancel()
+
+from app.routers import auth, admin, integrations
+
+app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION, lifespan=lifespan)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+app.include_router(auth.router)
 app.include_router(admin.router)
-app.include_router(user_settings.router)
-app.include_router(telegram.router)
-app.include_router(evolution.router)
-app.include_router(chatwoot.router)
+app.include_router(integrations.router, prefix=settings.API_V1_STR)
 
-
-static_dir = os.path.join(os.path.dirname(__file__), "static")
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-
+from fastapi import Request
+from fastapi.responses import RedirectResponse
 
 @app.get("/")
-async def root():
-    return RedirectResponse(url="/login")
+async def root(request: Request):
+    token = request.cookies.get("access_token")
+    if token:
+        return RedirectResponse(url="/admin/clients")
+    return RedirectResponse(url="/auth/login")
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
