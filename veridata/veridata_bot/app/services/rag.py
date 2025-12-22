@@ -1,85 +1,78 @@
 import httpx
 import logging
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from app.models.integration import IntegrationConfig
+import base64
 
 logger = logging.getLogger(__name__)
 
-async def get_client_config(db: AsyncSession, client_id: int, platform: str):
-    result = await db.execute(select(IntegrationConfig).where(
-        IntegrationConfig.client_id == client_id,
-        IntegrationConfig.platform == platform
-    ))
-    config = result.scalar_one_or_none()
-    return config.settings if config else {}
+class RAGService:
+    def __init__(self):
+        pass
 
-class RagService:
-    def __init__(self, db: AsyncSession):
-        self.db = db
-
-    async def forward_message(self, client_id: int, message: str, conversation_id: str, sender_id: str):
-        config = await get_client_config(self.db, client_id, "rag")
-        rag_url = config.get("url")
-        api_key = config.get("api_key")
+    async def query(self, message: str, session_id: str, config: dict) -> dict:
+        """
+        Sends a query to the RAG service based on the provided configuration.
+        """
+        api_url = config.get("api_url")
         tenant_id = config.get("tenant_id")
+
+        # Auth options
+        auth_header = config.get("auth_header")
+        username = config.get("username")
+        password = config.get("password")
+
         provider = config.get("provider", "gemini")
+        use_hyde = config.get("use_hyde", True)
+        use_rerank = config.get("use_rerank", True)
 
-        if not rag_url:
-            logger.error(f"RAG URL not configured for client {client_id}")
-            return None
+        if not api_url or not tenant_id:
+            logger.error("RAG Configuration missing api_url or tenant_id")
+            return "Configuration error: Missing RAG parameters."
 
-        if not tenant_id:
-            logger.error(f"RAG Tenant ID not configured for client {client_id}")
-            return None
+        headers = {
+            "Content-Type": "application/json"
+        }
 
-        # Log configuration (masking api key)
-        logger.info(f"Forwarding to RAG: URL={rag_url}, Tenant={tenant_id}, Provider={provider}, ConvID={conversation_id}")
+        if auth_header:
+            headers["Authorization"] = auth_header
+        elif username and password:
+            credentials = f"{username}:{password}"
+            encoded_credentials = base64.b64encode(credentials.encode()).decode()
+            headers["Authorization"] = f"Basic {encoded_credentials}"
 
-        async with httpx.AsyncClient() as client:
+        payload = {
+            "tenant_id": tenant_id,
+            "query": message,
+            "provider": provider,
+            "use_hyde": use_hyde,
+            "use_rerank": use_rerank,
+            "session_id": session_id
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
             try:
-                headers = {
-                    "Content-Type": "application/json"
-                }
-                if api_key:
-                    # Basic or Bearer? User curl showed "Basic YWRtaW46YWRtaW4=", which is admin:admin base64.
-                    # If user enters "Basic ...", use it directly. If just key, maybe Bearer?
-                    # User example: Authorization: Basic ...
-                    # Let's assume user puts full token or handle "Basic" prefix logic.
-                    if api_key.startswith("Basic ") or api_key.startswith("Bearer "):
-                         headers["Authorization"] = api_key
-                    else:
-                         headers["Authorization"] = f"Bearer {api_key}"
-
-                import uuid
-                # Generate a deterministic UUID based on conversation_id
-                # This ensures the same chatwoot conversation always gets the same RAG session UUID
-                session_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"chatwoot_{conversation_id}"))
-
-                payload = {
-                    "query": message,
-                    "session_id": session_uuid,
-                    "tenant_id": tenant_id,
-                    "provider": provider,
-                    "use_hyde": True,
-                    "use_rerank": True
-                }
-
-                logger.info(f"RAG Payload: {payload}")
-
-                response = await client.post(rag_url, json=payload, headers=headers)
+                response = await client.post(api_url, json=payload, headers=headers)
                 response.raise_for_status()
+                data = response.json()
 
-                resp_json = response.json()
-                logger.info(f"RAG Response: {resp_json}")
-
-                # Map RAG response standard to what we need
-                # User example response: { "answer": "...", "requires_human": true, ... }
-                return {
-                    "response": resp_json.get("answer", ""),
-                    "human_needed": resp_json.get("requires_human", False)
+                # Default return structure
+                result = {
+                    "answer": "",
+                    "session_id": None
                 }
 
+                if isinstance(data, dict):
+                     # Extract answer
+                     result["answer"] = data.get("answer") or data.get("response") or data.get("text") or str(data)
+                     # Extract session_id
+                     result["session_id"] = data.get("session_id")
+                else:
+                    result["answer"] = str(data)
+
+                return result
+
+            except httpx.HTTPStatusError as e:
+                logger.error(f"RAG Service Error: {e.response.text}")
+                return {"answer": "I'm having trouble connecting to my brain right now.", "session_id": None}
             except Exception as e:
-                logger.error(f"Error forwarding to RAG: {e}")
-                return None
+                logger.error(f"RAG Service Exception: {e}")
+                return {"answer": "An unexpected error occurred.", "session_id": None}

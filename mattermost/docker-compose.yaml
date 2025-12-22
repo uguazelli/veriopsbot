@@ -1,0 +1,50 @@
+name: mattermost
+
+services:
+  mattermost:
+    image: mattermost/mattermost-team-edition:latest
+    container_name: veridata.mattermost
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    read_only: false
+    tmpfs:
+      - /tmp
+    ports:
+      - "${APP_PORT:-8065}:8065"
+    environment:
+      - MM_SQLSETTINGS_DRIVERNAME=postgres
+      - MM_SQLSETTINGS_DATASOURCE=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/mattermost?sslmode=disable&connect_timeout=10
+
+      # ####### IMPORTANT: #######
+      # Change this to your real https domain
+
+      # 1. Match the URL you type in the browser
+      - MM_SERVICESETTINGS_SITEURL=http://localhost:4020
+
+      # 2. Explicitly allow the browser to connect from this origin
+      - MM_SERVICESETTINGS_ALLOWCORSFROM=http://localhost:4020
+
+      # 3. Force the WebSocket to use the insecure local protocol
+      - MM_SERVICESETTINGS_WEBSOCKETURL=ws://localhost:4020
+
+      # ALLOW THE CONTAINER TO TALK TO YOUR LOCAL BOT
+      - MM_SERVICESETTINGS_ALLOWEDUNTRUSTEDINTERNALCONNECTIONS=veridata.bot 172.16.0.0/12
+
+    volumes:
+      - ./volumes/config:/mattermost/config:rw
+      - ./volumes/data:/mattermost/data:rw
+      - ./volumes/logs:/mattermost/logs:rw
+      - ./volumes/plugins:/mattermost/plugins:rw
+      - ./volumes/client/plugins:/mattermost/client/plugins:rw
+      - /etc/localtime:/etc/localtime:ro
+
+    networks:
+      veridata.network:
+        aliases:
+          - veridata.mattermost
+
+networks:
+  veridata.network:
+    external: true

@@ -1,0 +1,123 @@
+{
+    "id": "zoom",
+    "name": "Zoom",
+    "description": "Zoom audio and video conferencing plugin for Mattermost.",
+    "homepage_url": "https://github.com/mattermost/mattermost-plugin-zoom",
+    "support_url": "https://github.com/mattermost/mattermost-plugin-zoom/issues",
+    "release_notes_url": "https://github.com/mattermost/mattermost-plugin-zoom/releases/tag/v1.11.0",
+    "icon_path": "assets/profile.svg",
+    "version": "1.11.0",
+    "min_server_version": "10.7.0",
+    "server": {
+        "executables": {
+            "darwin-amd64": "server/dist/plugin-darwin-amd64",
+            "darwin-arm64": "server/dist/plugin-darwin-arm64",
+            "linux-amd64": "server/dist/plugin-linux-amd64",
+            "linux-arm64": "server/dist/plugin-linux-arm64",
+            "windows-amd64": "server/dist/plugin-windows-amd64.exe"
+        },
+        "executable": ""
+    },
+    "webapp": {
+        "bundle_path": "webapp/dist/main.js"
+    },
+    "settings_schema": {
+        "header": "To set up this plugin you first need to create a Zoom App using a Zoom Administrator account. Visit the [documentation for configuration steps](https://mattermost.com/pl/mattermost-plugin-zoom).",
+        "footer": "",
+        "settings": [
+            {
+                "key": "ZoomURL",
+                "display_name": "Zoom URL:",
+                "type": "text",
+                "help_text": "The URL for a self-hosted private cloud or on-prem Zoom server. For example, https://yourzoom.com. Leave blank if you're using Zoom's vendor-hosted SaaS service.",
+                "placeholder": "https://zoom.us",
+                "default": null,
+                "hosting": "",
+                "secret": false
+            },
+            {
+                "key": "ZoomAPIURL",
+                "display_name": "Zoom API URL:",
+                "type": "text",
+                "help_text": "The API URL for a self-hosted private cloud or on-prem Zoom server. For example, https://api.yourzoom.com/v2. Leave blank if you're using Zoom's vendor-hosted SaaS service.",
+                "placeholder": "https://api.zoom.us/v2",
+                "default": null,
+                "hosting": "",
+                "secret": false
+            },
+            {
+                "key": "AccountLevelApp",
+                "display_name": "OAuth by Account Level App:",
+                "type": "bool",
+                "help_text": "When true, only an account administrator has to log in. The rest of the users will automatically use their Mattermost email to authenticate when starting meetings.",
+                "placeholder": "",
+                "default": false,
+                "hosting": "",
+                "secret": false
+            },
+            {
+                "key": "OAuthClientID",
+                "display_name": "Zoom OAuth Client ID:",
+                "type": "text",
+                "help_text": "The client ID for the OAuth app registered with Zoom. Leave blank if not using OAuth.",
+                "placeholder": "",
+                "default": null,
+                "hosting": "",
+                "secret": false
+            },
+            {
+                "key": "OAuthClientSecret",
+                "display_name": "Zoom OAuth Client Secret:",
+                "type": "text",
+                "help_text": "The client secret for the OAuth app registered with Zoom. Leave blank if not using OAuth.",
+                "placeholder": "",
+                "default": null,
+                "hosting": "",
+                "secret": true
+            },
+            {
+                "key": "EncryptionKey",
+                "display_name": "At Rest Token Encryption Key:",
+                "type": "generated",
+                "help_text": "The AES encryption key used to encrypt stored access tokens.",
+                "regenerate_help_text": "Regenerates the encryption key for Zoom OAuth token. Regenerating the key invalidates your existing Zoom OAuth.",
+                "placeholder": "",
+                "default": null,
+                "hosting": "",
+                "secret": true
+            },
+            {
+                "key": "WebhookSecret",
+                "display_name": "Webhook Secret:",
+                "type": "generated",
+                "help_text": "The secret used to authenticate the webhook to Mattermost.",
+                "regenerate_help_text": "Regenerates the secret for the webhook URL endpoint. Regenerating the secret invalidates your existing Zoom plugin.",
+                "placeholder": "",
+                "default": null,
+                "hosting": "",
+                "secret": true
+            },
+            {
+                "key": "ZoomWebhookSecret",
+                "display_name": "Zoom Webhook Secret:",
+                "type": "text",
+                "help_text": "Secret Token taken from Zoom's webhook configuration page",
+                "placeholder": "",
+                "default": null,
+                "hosting": "",
+                "secret": true
+            },
+            {
+                "key": "RestrictMeetingCreation",
+                "display_name": "Restrict Meeting Creation:",
+                "type": "bool",
+                "help_text": "Restrict user from creating meetings in public channels.",
+                "placeholder": "",
+                "default": false,
+                "hosting": "",
+                "secret": false
+            }
+        ],
+        "sections": null
+    }
+}

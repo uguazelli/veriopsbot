@@ -1,51 +1,35 @@
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from app.core.config import settings
-from app.core.database import engine, Base
-from app.models import * # Import models to register them
-import logging
 from contextlib import asynccontextmanager
-from app.services.scheduler import summary_scheduler
-import asyncio
+from fastapi import FastAPI
+from sqladmin import Admin
+from app.core.database import engine
+from app.models.base import Base
+from app.models.clients import Client, IntegrationConfig
+from app.models.sessions import ConversationSession
+from app.admin.views import ClientAdmin, IntegrationConfigAdmin
+from app.core.config import get_settings
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables
+    # Setup database (create tables if not exists for quick dev, though migrations are better)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
-    # Start scheduler
-    task = asyncio.create_task(summary_scheduler())
-
     yield
+    # Shutdown logic if needed
 
-    # Cancel scheduler on shutdown
-    task.cancel()
-
-from app.routers import auth, admin, integrations
+from app.routers import webhooks, api
 
 app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION, lifespan=lifespan)
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app.include_router(webhooks.router)
+app.include_router(api.router)
 
-app.include_router(auth.router)
-app.include_router(admin.router)
-app.include_router(integrations.router, prefix=settings.API_V1_STR)
-
-from fastapi import Request
-from fastapi.responses import RedirectResponse
+# Admin Interface
+admin = Admin(app, engine)
+admin.add_view(ClientAdmin)
+admin.add_view(IntegrationConfigAdmin)
 
 @app.get("/")
-async def root(request: Request):
-    token = request.cookies.get("access_token")
-    if token:
-        return RedirectResponse(url="/admin/clients")
-    return RedirectResponse(url="/auth/login")
-
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
+async def root():
+    return {"message": "Veridata Bot is running"}
