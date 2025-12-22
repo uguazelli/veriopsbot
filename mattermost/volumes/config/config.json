@@ -27,8 +27,8 @@
         "EnableOutgoingOAuthConnections": false,
         "EnableCommands": true,
         "OutgoingIntegrationRequestsTimeout": 30,
-        "EnablePostUsernameOverride": false,
-        "EnablePostIconOverride": false,
+        "EnablePostUsernameOverride": true,
+        "EnablePostIconOverride": true,
         "GoogleDeveloperKey": "",
         "EnableLinkPreviews": true,
         "EnablePermalinkPreviews": true,
@@ -476,7 +476,7 @@
     "CacheSettings": {
         "CacheType": "lru",
         "RedisAddress": "",
-        "RedisPassword": "",
+        "RedisPassword": "********************************",
         "RedisDB": -1,
         "RedisCachePrefix": "",
         "DisableClientCache": false

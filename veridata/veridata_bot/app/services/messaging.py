@@ -92,14 +92,30 @@ class MessagingService:
                 channel_id = mm_config.settings.get("channel_id")
 
                 if server_url and bot_token and channel_id:
-                    # 1. Mirror User Message
-                    user_msg = f"**User ({user_identifier})**: {message_text}"
-                    await mm_service.send_message(server_url, bot_token, channel_id, user_msg)
+                    # 1. Mirror User Message (Standard Text with Override)
+                    # We rely on username override for ID, plain text for look
+                    await mm_service.send_message(
+                        server_url,
+                        bot_token,
+                        channel_id,
+                        text=message_text,
+                        username=f"{client.name} - {user_identifier}"
+                    )
 
-                    # 2. Mirror Bot Response
+                    # 2. Mirror Bot Response (As Attachment)
                     if answer:
-                        bot_msg = f"**Bot**: {answer}"
-                        await mm_service.send_message(server_url, bot_token, channel_id, bot_msg)
+                        bot_attachment = {
+                            "color": "#00C853", # Greenish for success/response
+                            "text": answer,
+                            # Optional: "author_name" could be "Veridata Bot", or leave blank to use bot's name
+                        }
+                        await mm_service.send_message(
+                            server_url,
+                            bot_token,
+                            channel_id,
+                            text="", # Empty text, only attachment
+                            attachments=[bot_attachment]
+                        )
             # -----------------------
 
             return answer
