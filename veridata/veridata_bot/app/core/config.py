@@ -1,26 +1,26 @@
+from pydantic import computed_field
+from pydantic_core import MultiHostUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from functools import lru_cache
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "Veridata Bot"
-    VERSION: str = "0.1.0"
+    postgres_user: str = "veridata_user"
+    postgres_password: str = "veridata_pass"
+    postgres_host: str = "veridata.postgres"
+    postgres_port: int = 5432
+    postgres_db: str = "veridata_bot"
+    app_port: int = 4019
 
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: str
-    POSTGRES_HOST: str
-    POSTGRES_PORT: int = 5432
-    POSTGRES_DB: str
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    @property
-    def DATABASE_URL(self) -> str:
-        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+    @computed_field
+    def database_url(self) -> str:
+        return str(MultiHostUrl.build(
+            scheme="postgresql+asyncpg",
+            username=self.postgres_user,
+            password=self.postgres_password,
+            host=self.postgres_host,
+            port=self.postgres_port,
+            path=self.postgres_db,
+        ))
 
-    model_config = SettingsConfigDict(
-        case_sensitive=True,
-        env_file=".env",
-        extra="ignore"
-    )
-
-@lru_cache()
-def get_settings():
-    return Settings()
+settings = Settings()

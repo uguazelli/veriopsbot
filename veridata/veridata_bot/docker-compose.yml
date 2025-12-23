@@ -1,30 +1,28 @@
-name: veridata
+version: "3.8"
 
 services:
   veridata_bot:
     build: .
-    container_name: veridata.bot
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips '*'
+    container_name: veridata_bot
+    restart: always
     ports:
-      - "${VDBOT_PORT:-8000}:8000"
-    env_file:
-      - .env
+      - "${APP_PORT:-4019}:4019"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      - APP_PORT=4019
+      - POSTGRES_DB=${POSTGRES_DB:-veridata_bot}
+      - POSTGRES_USER=${POSTGRES_USER:-veridata_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-veridata_pass}
+      - POSTGRES_HOST=${POSTGRES_HOST:-veridata.postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
     volumes:
       - .:/app
-    develop:
-      watch:
-        - action: sync+restart
-          path: .
-          target: /app
-          ignore:
-            - .venv/
-            - __pycache__/
-            - .git/
-            - .env
     networks:
       veridata.network:
         aliases:
           - veridata.bot
+    external_links:
+      - veridata.postgres
 
 networks:
   veridata.network:

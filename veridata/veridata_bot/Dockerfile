@@ -1,25 +1,21 @@
-FROM python:3.11-slim
-
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+# Install dependencies to /opt/venv to avoid volume mount shadowing
+ENV UV_PROJECT_ENVIRONMENT="/opt/venv"
 WORKDIR /app
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project --no-dev
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install python dependencies
-# Using pip to install from pyproject.toml (conceptually similar to uv/poetry export requirements,
-# but for simplicity we can just pip install . if we struct it right, or just install manually since we listed them)
-# To keep it simple and standard without requiring uv inside container yet:
-COPY pyproject.toml .
-# We don't have a lock file yet, so we'll install dependencies directly based on pyproject.toml
-# Since pip doesn't read standard pyproject.toml dependencies directly without a build backend sometimes,
-# I will create a requirements.txt on the fly or just install the list.
-# Actually, pip install . works if we have a minimal setup, but let's just use a requirements file approach or manual install for robustness unless we commit to uv.
-# Let's use standard pip install of packages for now to avoid complexity of build tools inside image.
-RUN pip install --no-cache-dir fastapi "uvicorn[standard]" "sqlalchemy[asyncio]" asyncpg sqladmin pydantic-settings httpx python-multipart psycopg2-binary alembic requests
-
+FROM python:3.12-slim-bookworm
+# Add /opt/venv/bin to PATH
+ENV PATH="/opt/venv/bin:$PATH"
+WORKDIR /app
+# Copy the environment from the builder stage
+COPY --from=builder /opt/venv /opt/venv
 COPY . .
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Ensure start script is executable
+RUN chmod +x /app/start.sh
+
+CMD ["/app/start.sh"]
