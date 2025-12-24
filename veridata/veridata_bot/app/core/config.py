@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     postgres_port: int = 5432
     postgres_db: str = "veridata_bot"
     app_port: int = 4019
+    admin_user: str = "vd"
+    admin_password: str = "vd"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

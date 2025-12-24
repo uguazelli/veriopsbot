@@ -10,6 +10,8 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
       - APP_PORT=4019
+      - ADMIN_USER=${ADMIN_USER:-vd}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-vd}
       - POSTGRES_DB=${POSTGRES_DB:-veridata_bot}
       - POSTGRES_USER=${POSTGRES_USER:-veridata_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-veridata_pass}
