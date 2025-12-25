@@ -11,9 +11,8 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-async def process_webhook(client_slug: str, payload: dict, db: AsyncSession):
-    logger.info(f"Processing webhook for client: {client_slug}")
-    # 1. Validate Client & Subscription
+async def _get_client_and_config(client_slug: str, db: AsyncSession):
+    # 1. Validate Client
     query = select(Client).where(Client.slug == client_slug, Client.is_active == True)
     result = await db.execute(query)
     client = result.scalars().first()
@@ -21,6 +20,52 @@ async def process_webhook(client_slug: str, payload: dict, db: AsyncSession):
     if not client:
         logger.error(f"Client not found or inactive: {client_slug}")
         raise HTTPException(status_code=404, detail="Client not found or inactive")
+
+    # 2. Get Configs
+    cfg_query = select(ServiceConfig).where(ServiceConfig.client_id == client.id)
+    cfg_result = await db.execute(cfg_query)
+    configs = {c.platform: c.config for c in cfg_result.scalars().all()}
+
+    return client, configs
+
+async def process_integration_event(client_slug: str, payload: dict, db: AsyncSession):
+    client, configs = await _get_client_and_config(client_slug, db)
+    espo_config = configs.get("espocrm")
+
+    event_type = payload.get("event")
+    logger.info(f"Integration Event: {event_type}")
+
+    if event_type == "conversation_created":
+        logger.info("Processing conversation_created event")
+        if espo_config:
+            sender = payload.get("meta", {}).get("sender", {}) or payload.get("sender", {})
+            email = sender.get("email")
+            name = sender.get("name", "Unknown")
+
+            if email:
+                try:
+                    logger.info("Attempting EspoCRM sync for new conversation")
+                    espo = EspoClient(
+                        base_url=espo_config["base_url"],
+                        api_key=espo_config["api_key"]
+                    )
+                    await espo.sync_lead(name=name, email=email)
+                except Exception as e:
+                    logger.error(f"CRM Sync failed for conversation_created: {e}")
+            else:
+                logger.info("Skipping CRM sync for conversation_created: No email provided")
+        else:
+            logger.info("Skipping CRM sync: EspoCRM not configured")
+
+        return {"status": "conversation_created_processed"}
+
+    return {"status": "ignored_event"}
+
+async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
+    logger.info(f"Processing Bot event for client: {client_slug}")
+
+    # 1. Get Client & Config
+    client, configs = await _get_client_and_config(client_slug, db)
 
     # Check Subscription
     sub_query = select(Subscription).where(
@@ -36,13 +81,9 @@ async def process_webhook(client_slug: str, payload: dict, db: AsyncSession):
         # Optionally send a message saying "quota exceeded"
         return {"status": "quota_exceeded"}
 
-    # 2. Get Configs
-    cfg_query = select(ServiceConfig).where(ServiceConfig.client_id == client.id)
-    cfg_result = await db.execute(cfg_query)
-    configs = {c.platform: c.config for c in cfg_result.scalars().all()}
-
     rag_config = configs.get("rag")
     chatwoot_config = configs.get("chatwoot")
+    # espo_config logic removed from bot flow (kept only for syncing via integration webhook if needed separately, but primary sync is now in integration handler)
     espo_config = configs.get("espocrm")
 
     if not rag_config or not chatwoot_config:
@@ -54,6 +95,7 @@ async def process_webhook(client_slug: str, payload: dict, db: AsyncSession):
     # event_type = widget_triggered, message_created etc.
     event_type = payload.get("event")
     logger.info(f"Event type: {event_type}")
+
     if event_type != "message_created":
         logger.info(f"Ignored event: {event_type}")
         return {"status": "ignored_event"}
@@ -217,21 +259,7 @@ async def process_webhook(client_slug: str, payload: dict, db: AsyncSession):
     db.add(subscription)
     await db.commit()
 
-    # 6. CRM Sync (Best effort)
-    if espo_config:
-        try:
-            logger.info("Attempting EspoCRM sync")
-            espo = EspoClient(
-                base_url=espo_config["base_url"],
-                api_key=espo_config["api_key"]
-            )
-            email = sender.get("email")
-            name = sender.get("name", "Unknown")
-            if email:
-                await espo.sync_lead(name=name, email=email)
-            else:
-                logger.info("Skipping CRM sync: No email provided")
-        except Exception as e:
-            logger.error(f"CRM Sync failed: {e}")
+    # 6. CRM Sync
+    # Removed from Bot Flow - moved to Integration Flow
 
     return {"status": "processed"}

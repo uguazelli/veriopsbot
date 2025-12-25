@@ -3,7 +3,7 @@ from sqladmin import Admin, ModelView
 from app.core.db import engine, get_session
 from app.models import Client, Subscription, ServiceConfig, BotSession
 from app.api.endpoints import router as api_router
-from app.bot.engine import process_webhook
+from app.bot.engine import process_bot_event, process_integration_event
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.base import Base
 from sqladmin.authentication import AuthenticationBackend
@@ -75,14 +75,23 @@ admin.add_view(BotSessionAdmin)
 app.include_router(api_router, prefix="/api/v1")
 
 # Webhooks
-@app.post("/webhooks/chatwoot/{client_slug}")
-async def chatwoot_webhook(
+@app.post("/bot/chatwoot/{client_slug}")
+async def chatwoot_bot_handler(
     client_slug: str,
     request: Request,
     db: AsyncSession = Depends(get_session)
 ):
     payload = await request.json()
-    return await process_webhook(client_slug, payload, db)
+    return await process_bot_event(client_slug, payload, db)
+
+@app.post("/integrations/chatwoot/{client_slug}")
+async def chatwoot_integration_handler(
+    client_slug: str,
+    request: Request,
+    db: AsyncSession = Depends(get_session)
+):
+    payload = await request.json()
+    return await process_integration_event(client_slug, payload, db)
 
 @app.get("/health")
 def health():
