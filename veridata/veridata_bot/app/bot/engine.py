@@ -8,6 +8,7 @@ from app.integrations.espocrm import EspoClient
 import uuid
 import logging
 import httpx
+from app.core.logging import log_start, log_payload, log_skip, log_success, log_error, log_external_call, log_db
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ async def _get_client_and_config(client_slug: str, db: AsyncSession):
     client = result.scalars().first()
 
     if not client:
-        logger.error(f"Client not found or inactive: {client_slug}")
+        log_error(logger, f"Client not found or inactive: {client_slug}")
         raise HTTPException(status_code=404, detail="Client not found or inactive")
 
     # 2. Get Configs
@@ -29,40 +30,48 @@ async def _get_client_and_config(client_slug: str, db: AsyncSession):
     return client, configs
 
 async def process_integration_event(client_slug: str, payload: dict, db: AsyncSession):
-    client, configs = await _get_client_and_config(client_slug, db)
-    espo_config = configs.get("espocrm")
+    log_start(logger, f"Processing Integration Event for {client_slug}")
 
-    event_type = payload.get("event")
-    logger.info(f"Integration Event: {event_type}")
+    try:
+        client, configs = await _get_client_and_config(client_slug, db)
+        espo_config = configs.get("espocrm")
 
-    if event_type == "conversation_created":
-        logger.info("Processing conversation_created event")
-        if espo_config:
-            sender = payload.get("meta", {}).get("sender", {}) or payload.get("sender", {})
-            email = sender.get("email")
-            name = sender.get("name", "Unknown")
+        event_type = payload.get("event")
+        # log_payload(logger, payload, f"Integration Event: {event_type}")
 
-            if email:
-                try:
-                    logger.info("Attempting EspoCRM sync for new conversation")
-                    espo = EspoClient(
-                        base_url=espo_config["base_url"],
-                        api_key=espo_config["api_key"]
-                    )
-                    await espo.sync_lead(name=name, email=email)
-                except Exception as e:
-                    logger.error(f"CRM Sync failed for conversation_created: {e}")
+        if event_type == "conversation_created":
+            if espo_config:
+                sender = payload.get("meta", {}).get("sender", {}) or payload.get("sender", {})
+                email = sender.get("email")
+                phone = sender.get("phone_number")
+                name = sender.get("name", "Unknown")
+
+                if email or phone:
+                    try:
+                        log_external_call(logger, "EspoCRM", "Syncing lead for new conversation")
+                        espo = EspoClient(
+                            base_url=espo_config["base_url"],
+                            api_key=espo_config["api_key"]
+                        )
+                        await espo.sync_lead(name=name, email=email, phone_number=phone)
+                        log_success(logger, f"Lead synced: {email or phone}")
+                    except Exception as e:
+                        log_error(logger, f"CRM Sync failed for conversation_created: {e}")
+                else:
+                    log_skip(logger, "Skipping CRM sync: No email or phone provided")
             else:
-                logger.info("Skipping CRM sync for conversation_created: No email provided")
-        else:
-            logger.info("Skipping CRM sync: EspoCRM not configured")
+                log_skip(logger, "Skipping CRM sync: EspoCRM not configured")
 
-        return {"status": "conversation_created_processed"}
+            return {"status": "conversation_created_processed"}
 
-    return {"status": "ignored_event"}
+        return {"status": "ignored_event"}
+    except Exception as e:
+        log_error(logger, f"Integration event processing failed: {e}", exc_info=True)
+        return {"status": "error"}
 
 async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
-    logger.info(f"Processing Bot event for client: {client_slug}")
+    log_start(logger, f"Processing Bot Event for {client_slug}")
+    # log_payload(logger, payload, "Bot Event Payload")
 
     # 1. Get Client & Config
     client, configs = await _get_client_and_config(client_slug, db)
@@ -77,7 +86,7 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
     subscription = sub_result.scalars().first()
 
     if not subscription:
-        logger.warning(f"Subscription limit reached for {client_slug}")
+        log_error(logger, f"Subscription limit reached for {client_slug}")
         # Optionally send a message saying "quota exceeded"
         return {"status": "quota_exceeded"}
 
@@ -87,17 +96,16 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
     espo_config = configs.get("espocrm")
 
     if not rag_config or not chatwoot_config:
-        logger.error(f"Missing configs for {client_slug}. Found: {list(configs.keys())}")
+        log_error(logger, f"Missing configs for {client_slug}. Found: {list(configs.keys())}")
         raise HTTPException(status_code=500, detail="Configuration missing")
 
     # Extract info from payload
     # Assuming Chatwoot webhook payload structure
     # event_type = widget_triggered, message_created etc.
     event_type = payload.get("event")
-    logger.info(f"Event type: {event_type}")
 
     if event_type != "message_created":
-        logger.info(f"Ignored event: {event_type}")
+        log_skip(logger, f"Ignored event type: {event_type}")
         return {"status": "ignored_event"}
 
     message_data = payload.get("content", "")
@@ -108,12 +116,12 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
     logger.info(f"Message from {sender_type} in conversation {conversation_id}")
 
     if sender_type != "incoming":
-        logger.info("Ignored outgoing message")
+        log_skip(logger, "Ignored outgoing message")
         return {"status": "ignored_outgoing"}
 
     conversation_status = payload.get("conversation", {}).get("status")
     if conversation_status == "open" or conversation_status == "snoozed":
-        logger.info(f"Ignored conversation with status: {conversation_status}")
+        log_skip(logger, f"Ignored conversation with status: {conversation_status}")
         return {"status": "ignored_open_conversation"}
 
     user_query = payload.get("content")
@@ -134,7 +142,7 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
                  try:
                      async with httpx.AsyncClient(follow_redirects=True) as http_client:
                          # Download audio
-                         logger.info(f"Starting download from {data_url}")
+                         log_external_call(logger, "Internal/Web", f"Downloading audio from {data_url}")
                          resp = await http_client.get(data_url)
                          resp.raise_for_status()
                          audio_bytes = resp.content
@@ -147,18 +155,18 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
                             tenant_id=rag_config["tenant_id"]
                          )
 
-                         logger.info("Calling transcription service...")
+                         log_external_call(logger, "RAG Transcribe", "Sending audio for transcription")
                          transcript = await rag_client.transcribe(audio_bytes, filename)
-                         logger.info(f"Transcription result: '{transcript}'")
+                         log_success(logger, f"Transcription result: '{transcript}'")
 
                          if transcript:
                              user_query = transcript
                              break # One audio per message supported for now
                  except Exception as e:
-                     logger.error(f"Failed to process audio attachment: {e}", exc_info=True)
+                     log_error(logger, f"Failed to process audio attachment: {e}", exc_info=True)
 
     if not user_query:
-         logger.info("Empty message content and no valid audio transcription")
+         log_skip(logger, "Empty message content and no valid audio transcription")
          return {"status": "empty_message"}
 
     # 3. Session Management
@@ -170,7 +178,7 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
     session = sess_result.scalars().first()
 
     if not session:
-        logger.info(f"Creating new BotSession for conversation {conversation_id}")
+        log_start(logger, f"Creating new BotSession for conversation {conversation_id}")
         session = BotSession(
             client_id=client.id,
             external_session_id=conversation_id
@@ -179,7 +187,7 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
         await db.commit()
         await db.refresh(session)
     else:
-        logger.info(f"Found existing BotSession: {session.id}, RAG ID: {session.rag_session_id}")
+        log_db(logger, f"Found existing BotSession: {session.id}, RAG ID: {session.rag_session_id}")
 
     # 4. RAG Call
     # Extract optional params from config
@@ -200,15 +208,15 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
         if rag_use_hyde is not None: query_params["use_hyde"] = rag_use_hyde
         if rag_use_rerank is not None: query_params["use_rerank"] = rag_use_rerank
 
-        logger.info(f"Calling RAG service with query: '{user_query}' and params: {query_params}")
+        log_external_call(logger, "Veridata RAG", f"Query: '{user_query}' | Params: {query_params}")
         rag_response = await rag_client.query(
             message=user_query,
             session_id=session.rag_session_id,
             **query_params
         )
-        logger.info("RAG response received successfully")
+        log_success(logger, "RAG response received successfully")
     except Exception as e:
-        logger.error(f"RAG Error: {e}", exc_info=True)
+        log_error(logger, f"RAG Error: {e}", exc_info=True)
         return {"status": "rag_error"}
 
     answer = rag_response.get("answer")
@@ -217,11 +225,10 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
 
     # Update session if needed
     if new_rag_session_id and str(new_rag_session_id) != str(session.rag_session_id):
-        logger.info(f"Updating RAG session ID to {new_rag_session_id}")
+        log_db(logger, f"Updating RAG session ID to {new_rag_session_id}")
         session.rag_session_id = uuid.UUID(new_rag_session_id)
         db.add(session) # Mark for update
 
-    # 5. Send to Chatwoot
     # 5. Send to Chatwoot
     cw_client = ChatwootClient(
         base_url=chatwoot_config["base_url"],
@@ -233,26 +240,28 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
         # If conversation was resolved, reopen it as pending
         if conversation_status == "resolved":
             try:
-                logger.info(f"Reopening resolved conversation {conversation_id}")
+                log_external_call(logger, "Chatwoot", f"Reopening resolved conversation {conversation_id}")
                 await cw_client.toggle_status(conversation_id, "pending")
             except Exception as e:
-                logger.error(f"Failed to set status to pending for {conversation_id}: {e}")
+                log_error(logger, f"Failed to set status to pending for {conversation_id}: {e}")
 
-        logger.info(f"Sending response to Chatwoot conversation {conversation_id}")
+        log_external_call(logger, "Chatwoot", f"Sending response to conversation {conversation_id}")
         await cw_client.send_message(
             conversation_id=conversation_id,
             message=answer
         )
+        log_success(logger, "Response sent to Chatwoot")
     else:
-        logger.warning("RAG returned no answer")
+        log_skip(logger, "RAG returned no answer (empty response)")
 
     # Handle Handover
     if requires_human:
-         logger.info(f"Handover requested for session {conversation_id}")
+         log_start(logger, f"Handover requested for session {conversation_id}")
          try:
              await cw_client.toggle_status(conversation_id, "open")
+             log_success(logger, "Conversation opened for human agent")
          except Exception as e:
-             logger.error(f"Failed to toggle status for {conversation_id}: {e}")
+             log_error(logger, f"Failed to toggle status for {conversation_id}: {e}")
 
     # Increment Usage
     subscription.usage_count += 1
@@ -262,4 +271,5 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
     # 6. CRM Sync
     # Removed from Bot Flow - moved to Integration Flow
 
+    log_success(logger, "Bot Event Processed Successfully")
     return {"status": "processed"}

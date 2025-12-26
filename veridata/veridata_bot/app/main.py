@@ -12,12 +12,11 @@ from app.core.config import settings
 import logging
 import sys
 
+from app.core.logging import setup_logging
+
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+setup_logging()
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Veridata Bot")
 
