@@ -67,7 +67,6 @@ async def process_integration_event(client_slug: str, payload: dict, db: AsyncSe
         elif event_type == "conversation_status_changed":
             conversation = payload.get("content") or payload # Sometimes it's directly in payload or content
             # Chatwoot webhook structure varies. Usually strict webhook has 'id' at top level for some events, but status change usually has 'status' in top level or inside 'conversation_attributes'
-            # Let's look at standard payload: https://www.chatwoot.com/docs/product/others/webhooks/
             # It sends the updated conversation object.
             status = payload.get("status")
 
@@ -200,10 +199,6 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
     if conversation_status == "snoozed":
         log_skip(logger, "Ignored snoozed conversation")
         return {"status": "ignored_snoozed"}
-
-    if conversation_status == "open" and assignee_id:
-        log_skip(logger, f"Ignored assigned conversation (Agent ID: {assignee_id})")
-        return {"status": "ignored_assigned"}
 
     user_query = payload.get("content")
     attachments = payload.get("attachments", [])
@@ -338,18 +333,6 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
             message=answer
         )
         log_success(logger, "Response sent to Chatwoot")
-
-        # Enforce Pending if not handing off
-        if not requires_human and conversation_status != "pending":
-             # Wait, if we replied, Chatwoot might have set it to Open. We should force Pending.
-             # Note: If we just set it to pending above (resolved case), we are good.
-             # If it was Open (Unassigned), sending message keeps it Open. We want Pending.
-             if conversation_status == "open":
-                 try:
-                    log_external_call(logger, "Chatwoot", "Forcing status to pending after reply")
-                    await cw_client.toggle_status(conversation_id, "pending")
-                 except Exception as e:
-                     log_error(logger, f"Failed to force status to pending: {e}")
 
     else:
         log_skip(logger, "RAG returned no answer (empty response)")
