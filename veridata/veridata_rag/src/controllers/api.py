@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form
 from uuid import UUID
-from src.schemas import QueryRequest, QueryResponse
+from src.schemas import QueryRequest, QueryResponse, SummarizeRequest, ConversationSummary
 from src.auth import get_current_username
-from src.rag import generate_answer
+from src.rag import generate_answer, summarize_conversation
 from src.memory import create_session
 from src.transcription import transcribe_audio
 
@@ -31,6 +31,18 @@ async def api_query_rag(
         requires_human=requires_human,
         session_id=session_id
     )
+
+@router.post("/summarize", response_model=ConversationSummary)
+async def api_summarize_conversation(
+    request: SummarizeRequest,
+    username: str = Depends(get_current_username)
+):
+    """
+    Summarizes a conversation session.
+    """
+    summary_data = summarize_conversation(request.session_id, request.provider)
+    return ConversationSummary(**summary_data)
+
 
 @router.post("/transcribe")
 async def api_transcribe(

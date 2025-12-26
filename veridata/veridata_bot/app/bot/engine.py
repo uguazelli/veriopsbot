@@ -64,6 +64,72 @@ async def process_integration_event(client_slug: str, payload: dict, db: AsyncSe
 
             return {"status": "conversation_created_processed"}
 
+        elif event_type == "conversation_status_changed":
+            conversation = payload.get("content") or payload # Sometimes it's directly in payload or content
+            # Chatwoot webhook structure varies. Usually strict webhook has 'id' at top level for some events, but status change usually has 'status' in top level or inside 'conversation_attributes'
+            # Let's look at standard payload: https://www.chatwoot.com/docs/product/others/webhooks/
+            # It sends the updated conversation object.
+            status = payload.get("status")
+
+            if status == "resolved":
+                log_external_call(logger, "BotEngine", "Conversation resolved. Initiating Summarization & Sync.")
+
+                # 1. Find Session
+                conversation_id = str(payload.get("id"))
+                session_query = select(BotSession).where(
+                    BotSession.client_id == client.id,
+                    BotSession.external_session_id == conversation_id
+                )
+                sess_result = await db.execute(session_query)
+                session = sess_result.scalars().first()
+
+                if session and session.rag_session_id:
+                    rag_config = configs.get("rag")
+                    if rag_config:
+                         try:
+                            # 2. Generate Summary
+                            rag_client = RagClient(
+                                base_url=rag_config["base_url"],
+                                api_key=rag_config.get("api_key", ""),
+                                tenant_id=rag_config["tenant_id"]
+                            )
+                            summary = await rag_client.summarize(
+                                session_id=session.rag_session_id,
+                                provider=rag_config.get("provider", "gemini")
+                            )
+                            log_success(logger, "Summary generated successfully")
+
+                            # 3. Sync to CRM
+                            if espo_config:
+                                sender = payload.get("meta", {}).get("sender", {}) or payload.get("sender", {})
+                                email = sender.get("email")
+                                phone = sender.get("phone_number")
+
+                                if email or phone:
+                                    log_external_call(logger, "EspoCRM", "Updating lead with summary")
+                                    espo = EspoClient(
+                                        base_url=espo_config["base_url"],
+                                        api_key=espo_config["api_key"]
+                                    )
+                                    await espo.update_lead_summary(email, phone, summary)
+                                    log_success(logger, "CRM updated with summary")
+                                else:
+                                    log_skip(logger, "Skipping CRM update: No email or phone to match lead")
+
+                            # 4. Cleanup Session
+                            log_db(logger, f"Deleting BotSession {session.id} for resolved conversation")
+                            await db.delete(session)
+                            await db.commit()
+
+                         except Exception as e:
+                             log_error(logger, f"Summarization flow failed: {e}", exc_info=True)
+                    else:
+                        log_skip(logger, "RAG config missing, cannot summarize")
+                else:
+                    log_skip(logger, "No active BotSession found for this conversation, skipping summary.")
+
+            return {"status": "conversation_status_processed"}
+
         return {"status": "ignored_event"}
     except Exception as e:
         log_error(logger, f"Integration event processing failed: {e}", exc_info=True)
@@ -119,10 +185,25 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
         log_skip(logger, "Ignored outgoing message")
         return {"status": "ignored_outgoing"}
 
-    conversation_status = payload.get("conversation", {}).get("status")
-    if conversation_status == "open" or conversation_status == "snoozed":
-        log_skip(logger, f"Ignored conversation with status: {conversation_status}")
-        return {"status": "ignored_open_conversation"}
+    conversation_dict = payload.get("conversation", {})
+    conversation_status = conversation_dict.get("status")
+
+    # Robust extraction of assignee_id
+    meta = conversation_dict.get("meta") or {}
+    assignee = meta.get("assignee") or {}
+    assignee_id = assignee.get("id") or conversation_dict.get("assignee_id")
+
+    # Smart Status Check:
+    # 1. Open + Assigned = Human working -> Ignore
+    # 2. Open + Unassigned = New/Triage -> Process
+    # 3. Snoozed -> Ignore
+    if conversation_status == "snoozed":
+        log_skip(logger, "Ignored snoozed conversation")
+        return {"status": "ignored_snoozed"}
+
+    if conversation_status == "open" and assignee_id:
+        log_skip(logger, f"Ignored assigned conversation (Agent ID: {assignee_id})")
+        return {"status": "ignored_assigned"}
 
     user_query = payload.get("content")
     attachments = payload.get("attachments", [])
@@ -238,12 +319,18 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
 
     if answer:
         # If conversation was resolved, reopen it as pending
+        # Also, if we haven't handed off, force pending to keep bot in control
+        target_status = "pending" if not requires_human else "open"
+
+        # We only need to toggle if it's currently resolved OR if we want to enforce pending and it's currently open
+        # But simply calling toggle_status is safe.
+
         if conversation_status == "resolved":
-            try:
-                log_external_call(logger, "Chatwoot", f"Reopening resolved conversation {conversation_id}")
-                await cw_client.toggle_status(conversation_id, "pending")
-            except Exception as e:
-                log_error(logger, f"Failed to set status to pending for {conversation_id}: {e}")
+             try:
+                log_external_call(logger, "Chatwoot", f"Reopening resolved conversation {conversation_id} to {target_status}")
+                await cw_client.toggle_status(conversation_id, target_status)
+             except Exception as e:
+                log_error(logger, f"Failed to set status to {target_status}: {e}")
 
         log_external_call(logger, "Chatwoot", f"Sending response to conversation {conversation_id}")
         await cw_client.send_message(
@@ -251,6 +338,19 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
             message=answer
         )
         log_success(logger, "Response sent to Chatwoot")
+
+        # Enforce Pending if not handing off
+        if not requires_human and conversation_status != "pending":
+             # Wait, if we replied, Chatwoot might have set it to Open. We should force Pending.
+             # Note: If we just set it to pending above (resolved case), we are good.
+             # If it was Open (Unassigned), sending message keeps it Open. We want Pending.
+             if conversation_status == "open":
+                 try:
+                    log_external_call(logger, "Chatwoot", "Forcing status to pending after reply")
+                    await cw_client.toggle_status(conversation_id, "pending")
+                 except Exception as e:
+                     log_error(logger, f"Failed to force status to pending: {e}")
+
     else:
         log_skip(logger, "RAG returned no answer (empty response)")
 

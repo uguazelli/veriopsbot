@@ -27,7 +27,7 @@ class RagClient:
         return headers
 
     async def query(self, message: str, session_id: uuid.UUID | None = None, **kwargs) -> dict:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             url = f"{self.base_url}/api/query"
 
             # Base payload
@@ -50,7 +50,7 @@ class RagClient:
             # Expected response: {"answer": "...", "requires_human": true, "session_id": "..."}
 
     async def transcribe(self, file_bytes: bytes, filename: str, provider: str = "gemini") -> str:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             url = f"{self.base_url}/api/transcribe"
 
             headers = self._get_headers()
@@ -61,3 +61,20 @@ class RagClient:
             resp = await client.post(url, data=data, files=files, headers=headers)
             resp.raise_for_status()
             return resp.json().get("text", "")
+
+    async def summarize(self, session_id: uuid.UUID, provider: str = "gemini") -> dict:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            url = f"{self.base_url}/api/summarize"
+
+            payload = {
+                "tenant_id": self.tenant_id,
+                "session_id": str(session_id),
+                "provider": provider
+            }
+
+            logger.info(f"Requesting summary for session {session_id}")
+            headers = self._get_headers()
+
+            resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            return resp.json()

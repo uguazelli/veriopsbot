@@ -63,3 +63,42 @@ class EspoClient:
                 logger.error(f"EspoCRM Creation Failed: {e.response.text}")
                 raise e
             return resp.json()
+
+    async def update_lead_summary(self, email: str | None, phone: str | None, summary: dict):
+        if not email and not phone:
+            return
+
+        async with httpx.AsyncClient() as client:
+            search_url = f"{self.base_url}/api/v1/Lead"
+
+            # 1. Search (Reuse logic)
+            if email:
+                params = {"where[0][type]": "equals", "where[0][attribute]": "emailAddress", "where[0][value]": email}
+            elif phone:
+                params = {"where[0][type]": "equals", "where[0][attribute]": "phoneNumber", "where[0][value]": phone}
+
+            resp = await client.get(search_url, params=params, headers=self.headers)
+            if resp.status_code != 200 or not resp.json().get('list'):
+                logger.warning(f"Lead not found for summary update: {email or phone}")
+                return
+
+            lead_id = resp.json()['list'][0]['id']
+
+            # 2. Format Description
+            desc = (
+                f"### AI Conversation Summary 🤖\n\n"
+                f"**Summary**: {summary.get('ai_summary', 'N/A')}\n\n"
+                f"**Client Profile**: {summary.get('client_description', 'N/A')}\n"
+                f"**Analysis**:\n"
+                f"- Intent: {summary.get('purchase_intent')}\n"
+                f"- Urgency: {summary.get('urgency_level')}\n"
+                f"- Sentiment: {summary.get('sentiment_score')}\n"
+                f"- Budget: {summary.get('detected_budget')}\n"
+            )
+
+            # 3. Update
+            update_url = f"{self.base_url}/api/v1/Lead/{lead_id}"
+            payload = {"description": desc}
+
+            logger.info(f"Updating Lead {lead_id} with summary")
+            await client.put(update_url, json=payload, headers=self.headers)

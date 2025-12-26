@@ -14,11 +14,16 @@ import sys
 
 from app.core.logging import setup_logging
 
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
 # Configure logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Veridata Bot")
+
+# Fix for Mixed Content / HTTPS behind Proxy
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
 
 # Admin Views
 class ClientAdmin(ModelView, model=Client):

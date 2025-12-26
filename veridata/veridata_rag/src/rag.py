@@ -12,12 +12,76 @@ from src.embeddings import CustomGeminiEmbedding
 from src.hyde import generate_hypothetical_answer
 from src.rerank import rerank_documents
 from src.llm_factory import get_llm
-from src.memory import add_message, get_chat_history
+from src.memory import add_message, get_chat_history, get_full_chat_history
 
 logger = logging.getLogger(__name__)
 
 # Single instance of embedding model
 _embed_model = None
+
+SUMMARY_PROMPT_TEMPLATE = (
+    "You are an expert CRM analyst. Analyze the following conversation between a user and an AI assistant.\n"
+    "Extract structured information for lead qualification and CRM updates.\n\n"
+    "Conversation:\n{history_str}\n\n"
+    "Tasks:\n"
+    "1. Analyze Purchase Intent (High, Medium, Low, None)\n"
+    "2. Assess Urgency (Urgent, Normal, Low)\n"
+    "3. Determine Sentiment Score (Positive, Neutral, Negative)\n"
+    "4. Detect Budget (if mentioned)\n"
+    "5. Extract Contact Info (Name, Phone, Email, Address, Industry)\n"
+    "6. Write a concise AI Summary (Markdown)\n"
+    "7. Write a Client Description (Professional tone)\n\n"
+    "Output must be valid JSON with this structure:\n"
+    "{{\n"
+    "  \"purchase_intent\": \"...\",\n"
+    "  \"urgency_level\": \"...\",\n"
+    "  \"sentiment_score\": \"...\",\n"
+    "  \"detected_budget\": null,\n"
+    "  \"ai_summary\": \"...\",\n"
+    "  \"contact_info\": {{\"name\": null, \"phone\": null, \"email\": null, \"address\": null, \"industry\": null}},\n"
+    "  \"client_description\": \"...\"\n"
+    "}}\n\n"
+    "JSON Output:"
+)
+
+def summarize_conversation(session_id: UUID, provider: str = "gemini") -> Dict[str, Any]:
+    """
+    Summarizes a full conversation session into structured JSON.
+    """
+    history = get_full_chat_history(session_id)
+    if not history:
+        logger.warning(f"No history found for session {session_id}")
+        return {}
+
+    history_str = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in history])
+
+    try:
+        llm = get_llm(provider)
+        prompt = SUMMARY_PROMPT_TEMPLATE.format(history_str=history_str)
+        response = llm.complete(prompt)
+        text = response.text.replace('```json', '').replace('```', '').strip()
+        logger.info(f"LLM Summarization response: {text}")
+
+        import json
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            import ast
+            logger.warning("JSON decode failed, trying literal_eval")
+            return ast.literal_eval(text)
+
+    except Exception as e:
+        logger.error(f"Summarization failed: {e}")
+        # Return fallback object that matches the Pydantic schema
+        return {
+            "purchase_intent": "None",
+            "urgency_level": "Low",
+            "sentiment_score": "Neutral",
+            "detected_budget": None,
+            "ai_summary": f"Summarization failed due to error: {str(e)}",
+            "contact_info": {},
+            "client_description": None
+        }
 
 # ... existing imports ...
 

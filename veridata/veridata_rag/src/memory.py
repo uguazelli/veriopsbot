@@ -67,3 +67,21 @@ def get_chat_history(session_id: UUID, limit: int = 10) -> List[Dict[str, str]]:
             # Convert to list of dicts and reverse to chronological order
             history = [{"role": row[0], "content": row[1]} for row in rows]
             return history[::-1]
+
+def get_full_chat_history(session_id: UUID) -> List[Dict[str, str]]:
+    """
+    Retrieves ALL chat history for a session for summarization.
+    """
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT role, content
+                FROM chat_messages
+                WHERE session_id = %s
+                ORDER BY created_at ASC
+                """,
+                (session_id,)
+            )
+            rows = cur.fetchall()
+            return [{"role": row[0], "content": row[1]} for row in rows]
