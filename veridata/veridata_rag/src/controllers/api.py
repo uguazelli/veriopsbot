@@ -3,10 +3,21 @@ from uuid import UUID
 from src.schemas import QueryRequest, QueryResponse, SummarizeRequest, ConversationSummary
 from src.auth import get_current_username
 from src.rag import generate_answer, summarize_conversation
-from src.memory import create_session
+from src.memory import create_session, delete_session
 from src.transcription import transcribe_audio
 
 router = APIRouter()
+
+@router.delete("/session/{session_id}")
+async def api_delete_session(
+    session_id: UUID,
+    username: str = Depends(get_current_username)
+):
+    """
+    Deletes a session and its history.
+    """
+    delete_session(session_id)
+    return {"status": "deleted", "session_id": session_id}
 
 @router.post("/query", response_model=QueryResponse)
 async def api_query_rag(

@@ -78,3 +78,17 @@ class RagClient:
             resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             return resp.json()
+
+    async def delete_session(self, session_id: uuid.UUID) -> dict:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = f"{self.base_url}/api/session/{session_id}"
+
+            headers = self._get_headers()
+
+            logger.info(f"Deleting RAG session {session_id}")
+            resp = await client.delete(url, headers=headers)
+            # If 404, it's fine (already deleted)
+            if resp.status_code == 404:
+                return {"status": "already_deleted"}
+            resp.raise_for_status()
+            return resp.json()

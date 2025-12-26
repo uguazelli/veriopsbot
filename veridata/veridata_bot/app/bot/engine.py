@@ -74,7 +74,9 @@ async def process_integration_event(client_slug: str, payload: dict, db: AsyncSe
                 log_external_call(logger, "BotEngine", "Conversation resolved. Initiating Summarization & Sync.")
 
                 # 1. Find Session
-                conversation_id = str(payload.get("id"))
+                conversation_id = str(conversation.get("id"))
+                log_db(logger, f"Looking for BotSession with Client '{client_slug}' (ID: {client.id}) and Ext ID: '{conversation_id}'")
+
                 session_query = select(BotSession).where(
                     BotSession.client_id == client.id,
                     BotSession.external_session_id == conversation_id
@@ -115,7 +117,14 @@ async def process_integration_event(client_slug: str, payload: dict, db: AsyncSe
                                 else:
                                     log_skip(logger, "Skipping CRM update: No email or phone to match lead")
 
-                            # 4. Cleanup Session
+                            # 4. Cleanup Session (RAG side)
+                            try:
+                                log_external_call(logger, "Veridata RAG", f"Deleting RAG session {session.rag_session_id}")
+                                await rag_client.delete_session(session.rag_session_id)
+                            except Exception as e:
+                                log_error(logger, f"Failed to delete RAG session: {e}")
+
+                            # 5. Cleanup Session (Bot side)
                             log_db(logger, f"Deleting BotSession {session.id} for resolved conversation")
                             await db.delete(session)
                             await db.commit()

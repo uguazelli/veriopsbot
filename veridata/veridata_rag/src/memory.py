@@ -85,3 +85,15 @@ def get_full_chat_history(session_id: UUID) -> List[Dict[str, str]]:
             )
             rows = cur.fetchall()
             return [{"role": row[0], "content": row[1]} for row in rows]
+
+def delete_session(session_id: UUID):
+    """
+    Deletes a session and all its messages from the database.
+    """
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            # Delete messages first (Constraint usually cascades, but good to be explicit)
+            cur.execute("DELETE FROM chat_messages WHERE session_id = %s", (session_id,))
+            cur.execute("DELETE FROM chat_sessions WHERE id = %s", (session_id,))
+            conn.commit()
+            logger.info(f"Deleted session {session_id} and its history.")
