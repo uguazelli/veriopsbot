@@ -194,9 +194,6 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
     # event_type = widget_triggered, message_created etc.
     event_type = payload.get("event")
 
-    if event_type == "conversation_opened":
-        log_payload(logger, payload, "Conversation Opened Payload")
-
     if event_type != "message_created":
         log_skip(logger, f"Ignored event type: {event_type}")
         return {"status": "ignored_event"}
