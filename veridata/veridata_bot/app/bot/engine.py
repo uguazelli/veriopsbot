@@ -178,6 +178,9 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
     # event_type = widget_triggered, message_created etc.
     event_type = payload.get("event")
 
+    if event_type == "conversation_opened":
+        log_payload(logger, payload, "Conversation Opened Payload")
+
     if event_type != "message_created":
         log_skip(logger, f"Ignored event type: {event_type}")
         return {"status": "ignored_event"}
@@ -196,18 +199,13 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
     conversation_dict = payload.get("conversation", {})
     conversation_status = conversation_dict.get("status")
 
-    # Robust extraction of assignee_id
-    meta = conversation_dict.get("meta") or {}
-    assignee = meta.get("assignee") or {}
-    assignee_id = assignee.get("id") or conversation_dict.get("assignee_id")
+    # Strict Status Check:
+    # 1. Open or Snoozed -> Ignore (Bot is paused)
+    # 2. Pending or Resolved -> Process (Bot is active)
 
-    # Smart Status Check:
-    # 1. Open + Assigned = Human working -> Ignore
-    # 2. Open + Unassigned = New/Triage -> Process
-    # 3. Snoozed -> Ignore
-    if conversation_status == "snoozed":
-        log_skip(logger, "Ignored snoozed conversation")
-        return {"status": "ignored_snoozed"}
+    if conversation_status == "snoozed" or conversation_status == "open":
+        log_skip(logger, f"Ignored conversation with status: {conversation_status}")
+        return {"status": f"ignored_{conversation_status}"}
 
     user_query = payload.get("content")
     attachments = payload.get("attachments", [])
@@ -322,20 +320,6 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
     )
 
     if answer:
-        # If conversation was resolved, reopen it as pending
-        # Also, if we haven't handed off, force pending to keep bot in control
-        target_status = "pending" if not requires_human else "open"
-
-        # We only need to toggle if it's currently resolved OR if we want to enforce pending and it's currently open
-        # But simply calling toggle_status is safe.
-
-        if conversation_status == "resolved":
-             try:
-                log_external_call(logger, "Chatwoot", f"Reopening resolved conversation {conversation_id} to {target_status}")
-                await cw_client.toggle_status(conversation_id, target_status)
-             except Exception as e:
-                log_error(logger, f"Failed to set status to {target_status}: {e}")
-
         log_external_call(logger, "Chatwoot", f"Sending response to conversation {conversation_id}")
         await cw_client.send_message(
             conversation_id=conversation_id,
@@ -346,14 +330,23 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
     else:
         log_skip(logger, "RAG returned no answer (empty response)")
 
-    # Handle Handover
-    if requires_human:
-         log_start(logger, f"Handover requested for session {conversation_id}")
-         try:
+    # Status Management
+    try:
+        if requires_human:
+             # Rule 1a: Handoff -> Open
+             log_start(logger, f"Handover requested for session {conversation_id}")
              await cw_client.toggle_status(conversation_id, "open")
              log_success(logger, "Conversation opened for human agent")
-         except Exception as e:
-             log_error(logger, f"Failed to toggle status for {conversation_id}: {e}")
+
+        else:
+             # Rule 1b & General Stability: Force Pending
+             # Chatwoot often auto-opens on reply, so we must enforce pending to keep it in bot's court.
+             log_external_call(logger, "Chatwoot", f"Enforcing pending status for conversation {conversation_id}")
+             await cw_client.toggle_status(conversation_id, "pending")
+             log_success(logger, "Conversation set to pending")
+
+    except Exception as e:
+         log_error(logger, f"Failed to update status for {conversation_id}: {e}")
 
     # Increment Usage
     subscription.usage_count += 1

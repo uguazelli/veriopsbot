@@ -1,6 +1,6 @@
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, Request, BackgroundTasks
 from sqladmin import Admin, ModelView
-from app.core.db import engine, get_session
+from app.core.db import engine, get_session, async_session_maker
 from app.models import Client, Subscription, ServiceConfig, BotSession
 from app.api.endpoints import router as api_router
 from app.bot.engine import process_bot_event, process_integration_event
@@ -24,6 +24,15 @@ app = FastAPI(title="Veridata Bot")
 
 # Fix for Mixed Content / HTTPS behind Proxy
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
+
+# Background Task Wrapper
+async def run_bot_bg(client_slug: str, payload: dict):
+    async with async_session_maker() as db:
+        await process_bot_event(client_slug, payload, db)
+
+async def run_integration_bg(client_slug: str, payload: dict):
+    async with async_session_maker() as db:
+        await process_integration_event(client_slug, payload, db)
 
 # Admin Views
 class ClientAdmin(ModelView, model=Client):
@@ -83,19 +92,21 @@ app.include_router(api_router, prefix="/api/v1")
 async def chatwoot_bot_handler(
     client_slug: str,
     request: Request,
-    db: AsyncSession = Depends(get_session)
+    background_tasks: BackgroundTasks
 ):
     payload = await request.json()
-    return await process_bot_event(client_slug, payload, db)
+    background_tasks.add_task(run_bot_bg, client_slug, payload)
+    return {"status": "processing_started"}
 
 @app.post("/integrations/chatwoot/{client_slug}")
 async def chatwoot_integration_handler(
     client_slug: str,
     request: Request,
-    db: AsyncSession = Depends(get_session)
+    background_tasks: BackgroundTasks
 ):
     payload = await request.json()
-    return await process_integration_event(client_slug, payload, db)
+    background_tasks.add_task(run_integration_bg, client_slug, payload)
+    return {"status": "processing_started"}
 
 @app.get("/health")
 def health():
