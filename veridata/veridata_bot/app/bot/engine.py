@@ -100,6 +100,22 @@ async def process_integration_event(client_slug: str, payload: dict, db: AsyncSe
                             )
                             log_success(logger, "Summary generated successfully")
 
+                            # Add Timestamps
+                            import datetime
+                            created_at_ts = conversation.get("created_at") # Unix timestamp
+                            now = datetime.datetime.now()
+
+                            if created_at_ts:
+                                start_dt = datetime.datetime.fromtimestamp(int(created_at_ts))
+                                start_str = start_dt.strftime("%d/%m/%Y %H:%M")
+                            else:
+                                start_str = "Unknown"
+
+                            end_str = now.strftime("%d/%m/%Y %H:%M")
+
+                            summary["conversation_start"] = start_str
+                            summary["conversation_end"] = end_str
+
                             # 3. Sync to CRM
                             if espo_config:
                                 sender = payload.get("meta", {}).get("sender", {}) or payload.get("sender", {})

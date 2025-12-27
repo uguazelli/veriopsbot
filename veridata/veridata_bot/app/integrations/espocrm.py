@@ -87,6 +87,7 @@ class EspoClient:
             # 2. Format Description
             desc = (
                 f"### AI Conversation Summary 🤖\n\n"
+                f"**Period**: {summary.get('conversation_start', 'N/A')} - {summary.get('conversation_end', 'N/A')}\n"
                 f"**Summary**: {summary.get('ai_summary', 'N/A')}\n\n"
                 f"**Client Profile**: {summary.get('client_description', 'N/A')}\n"
                 f"**Analysis**:\n"
