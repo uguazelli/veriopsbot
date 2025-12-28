@@ -9,7 +9,7 @@ services:
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
-      - ./src:/app/src
+      - ./app:/app/app
     networks:
       veridata.network:
         aliases:
@@ -17,8 +17,8 @@ services:
     develop:
       watch:
         - action: sync
-          path: ./src
-          target: /app/src
+          path: ./app
+          target: /app/app
         - action: rebuild
           path: ./pyproject.toml
 
