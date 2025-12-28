@@ -29,8 +29,8 @@ async def sync_worker_loop():
 
                     logger.info(f"Checking job for [{client_name}] on [{config.platform}]")
 
-                    if config.platform == "chatwoot-auto-resolve":
-                        await run_auto_resolve_job(config)
+                    if config.platform == "chatwoot" or config.platform == "chatwoot-auto-resolve":
+                        await run_auto_resolve_job(session, config)
                     else:
                         logger.info(f"Simulating generic sync for [{client_name}] (Frequency: {config.frequency_minutes}m)")
 

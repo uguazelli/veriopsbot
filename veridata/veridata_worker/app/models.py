@@ -1,4 +1,5 @@
 from typing import Optional, List
+from datetime import datetime
 from sqlmodel import SQLModel, Field, Relationship, JSON, Column
 from sqlalchemy import BigInteger
 
@@ -12,6 +13,12 @@ class Client(SQLModel, table=True):
     is_active: bool = True
 
     sync_configs: List["SyncConfig"] = Relationship(back_populates="client")
+    service_configs: List["ServiceConfig"] = Relationship(back_populates="client")
+    subscriptions: List["Subscription"] = Relationship(back_populates="client")
+    bot_sessions: List["BotSession"] = Relationship(back_populates="client")
+
+    def __str__(self):
+        return self.name
 
 class SyncConfig(SQLModel, table=True):
     __tablename__ = "sync_configs"
@@ -24,6 +31,9 @@ class SyncConfig(SQLModel, table=True):
     frequency_minutes: int = Field(default=60)
 
     client: Optional[Client] = Relationship(back_populates="sync_configs")
+
+    def __str__(self):
+        return f"{self.platform} ({self.frequency_minutes}m)"
 
 class ServiceConfig(SQLModel, table=True):
     """
@@ -38,7 +48,7 @@ class ServiceConfig(SQLModel, table=True):
     platform: str # 'rag', 'chatwoot', 'espocrm'
     config: dict = Field(default={}, sa_column=Column(JSON))
 
-    client: Optional[Client] = Relationship(sa_relationship_kwargs={"viewonly": True}) # Simplify relationship handling
+    client: Optional[Client] = Relationship(back_populates="service_configs")
 
 class Subscription(SQLModel, table=True):
     """
@@ -52,9 +62,10 @@ class Subscription(SQLModel, table=True):
     client_id: int = Field(foreign_key="clients.id")
     quota_limit: int = Field(default=1000)
     usage_count: int = Field(default=0)
-    # Datetime fields skipped for now or need simpler definition for Admin UI if not edited often
+    start_date: Optional[datetime] = Field(default=None)
+    end_date: Optional[datetime] = Field(default=None)
 
-    client: Optional[Client] = Relationship(sa_relationship_kwargs={"viewonly": True})
+    client: Optional[Client] = Relationship(back_populates="subscriptions")
 
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
@@ -72,5 +83,4 @@ class BotSession(SQLModel, table=True):
     external_session_id: str = Field(index=True) # Chatwoot Conversation ID
     rag_session_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column(UUID(as_uuid=True)))
 
-    client: Optional[Client] = Relationship(sa_relationship_kwargs={"viewonly": True})
-
+    client: Optional[Client] = Relationship(back_populates="bot_sessions")

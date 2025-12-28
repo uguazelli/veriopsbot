@@ -1,28 +1,42 @@
 from datetime import datetime, timezone
 import logging
-from app.models import SyncConfig
+from sqlalchemy import select
+from sqlmodel.ext.asyncio.session import AsyncSession
+from app.models import SyncConfig, ServiceConfig
 from app.integrations.chatwoot import ChatwootClient
 
 logger = logging.getLogger(__name__)
 
-async def run_auto_resolve_job(config: SyncConfig):
+async def run_auto_resolve_job(session: AsyncSession, config: SyncConfig):
     """
     Checks for inactive conversations and resolves them.
-    Triggered by SyncConfig with platform='chatwoot-auto-resolve'.
+    Triggered by SyncConfig. Platform credentials fetched from ServiceConfig.
     """
     logger.info(f"Starting Auto-Resolve Job for Config ID {config.id}")
 
-    # Extract settings
-    cw_config = config.config_json
-    base_url = cw_config.get("base_url")
-    account_id = cw_config.get("account_id")
-    access_token = cw_config.get("access_token")
+    # 1. Fetch Credentials from ServiceConfig
+    # We look for the 'chatwoot' service config for this client
+    stmt = select(ServiceConfig).where(
+        ServiceConfig.client_id == config.client_id,
+        ServiceConfig.platform == "chatwoot"
+    )
+    result = await session.execute(stmt)
+    service_config = result.scalars().first()
 
-    if not all([base_url, account_id, access_token]):
-        logger.error(f"Missing Chatwoot connection details in Config {config.id}")
+    if not service_config:
+        logger.error(f"Skipping Auto-Resolve for Config {config.id}: No 'chatwoot' ServiceConfig found for Client {config.client_id}")
         return
 
-    client = ChatwootClient(base_url, account_id, access_token)
+    cw_creds = service_config.config
+    base_url = cw_creds.get("base_url")
+    account_id = cw_creds.get("account_id", "1")
+    access_token = cw_creds.get("api_key") # Map 'api_key' to access_token
+
+    if not all([base_url, access_token]):
+        logger.error(f"Invalid Chatwoot credentials in ServiceConfig {service_config.id}")
+        return
+
+    client = ChatwootClient(base_url, str(account_id), access_token)
 
     # Fetch OPEN conversations
     # (Checking 'pending' too might be good, but starting with 'open' is safer)
