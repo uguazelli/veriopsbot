@@ -29,6 +29,18 @@
             backdrop.classList.add('hidden');
         }
     }
+
+    function copyToClipboard(text, btn) {
+        navigator.clipboard.writeText(text).then(() => {
+            const originalContent = btn.innerHTML;
+            btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+            setTimeout(() => {
+                btn.innerHTML = originalContent;
+            }, 2000);
+        }).catch(err => {
+            console.error('Failed to copy: ', err);
+        });
+    }
 </script>
 
 <!-- Mobile Header -->
@@ -123,7 +135,19 @@
     <header
         class="bg-white border-b border-gray-200 px-4 py-4 sm:px-6 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
         <h2 class="text-xl sm:text-2xl font-bold text-gray-800 truncate">{{ selected_tenant.name }}</h2>
-        <span class="text-xs text-gray-500 font-mono break-all sm:break-normal">{{ selected_tenant.id }}</span>
+        <div class="flex items-center gap-3 bg-gray-50 px-3 py-1.5 rounded-full border border-gray-200">
+            <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Client ID</span>
+            <span class="font-mono font-bold text-gray-700 text-sm select-all">{{ selected_tenant.id }}</span>
+            <button onclick="copyToClipboard('{{ selected_tenant.id }}', this)"
+                class="ml-1 text-gray-400 hover:text-blue-600 transition-colors p-0.5 rounded focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500"
+                title="Copy to clipboard">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+            </button>
+        </div>
     </header>
 
     <div class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 sm:space-y-8">
