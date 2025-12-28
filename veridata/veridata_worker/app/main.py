@@ -81,6 +81,7 @@ async def lifespan(app: FastAPI):
         from sqlalchemy import text
         try:
             await conn.execute(text("ALTER TABLE sync_configs ADD COLUMN IF NOT EXISTS last_run_at TIMESTAMP WITHOUT TIME ZONE"))
+            await conn.execute(text("ALTER TABLE sync_configs ADD COLUMN IF NOT EXISTS inactivity_threshold_minutes INTEGER"))
         except Exception as e:
             logger.warning(f"Migration check failed (safe to ignore if column exists): {e}")
 

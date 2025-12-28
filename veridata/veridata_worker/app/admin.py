@@ -40,8 +40,8 @@ class ClientAdmin(ModelView, model=Client):
 class SyncConfigAdmin(ModelView, model=SyncConfig):
     name = "Job Schedule"
     name_plural = "Job Schedules"
-    column_list = [SyncConfig.id, SyncConfig.client_id, SyncConfig.platform, SyncConfig.is_active, SyncConfig.frequency_minutes, SyncConfig.last_run_at]
-    form_columns = [SyncConfig.client, SyncConfig.platform, SyncConfig.config_json, SyncConfig.is_active, SyncConfig.frequency_minutes, SyncConfig.last_run_at]
+    column_list = [SyncConfig.id, SyncConfig.client_id, SyncConfig.platform, SyncConfig.is_active, SyncConfig.frequency_minutes, SyncConfig.inactivity_threshold_minutes, SyncConfig.last_run_at]
+    form_columns = [SyncConfig.client, SyncConfig.platform, SyncConfig.config_json, SyncConfig.is_active, SyncConfig.frequency_minutes, SyncConfig.inactivity_threshold_minutes, SyncConfig.last_run_at]
     icon = "fa-solid fa-clock"
 
     @action("run_now", "Execute Now", add_in_detail=True, add_in_list=True)

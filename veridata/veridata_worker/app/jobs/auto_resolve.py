@@ -47,7 +47,10 @@ async def run_auto_resolve_job(session: AsyncSession, config: SyncConfig):
     conversations = conversations_open + conversations_pending
 
     now = datetime.now(timezone.utc).timestamp() # Current unix timestamp
-    threshold_seconds = config.frequency_minutes * 60
+
+    # Use inactivity_threshold_minutes if set, otherwise fallback to 30 mins
+    inactivity_mins = config.inactivity_threshold_minutes if config.inactivity_threshold_minutes is not None else 30
+    threshold_seconds = inactivity_mins * 60
 
     resolve_count = 0
 
@@ -65,7 +68,7 @@ async def run_auto_resolve_job(session: AsyncSession, config: SyncConfig):
             # Check Inactivity
             if (now - last_activity_ts) > threshold_seconds:
                 conv_id = conv.get("id")
-                log_job(logger, f"Conversation {conv_id} inactive for {(now - last_activity_ts)/60:.1f} mins. Resolving...")
+                log_job(logger, f"Conversation {conv_id} inactive for {(now - last_activity_ts)/60:.1f} mins (Threshold: {inactivity_mins}m). Resolving...")
 
                 await client.toggle_status(conv_id, "resolved")
                 resolve_count += 1

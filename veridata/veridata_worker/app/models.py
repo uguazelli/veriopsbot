@@ -29,6 +29,7 @@ class SyncConfig(SQLModel, table=True):
     config_json: dict = Field(default={}, sa_column=Column(JSON))
     is_active: bool = Field(default=True)
     frequency_minutes: int = Field(default=60)
+    inactivity_threshold_minutes: Optional[int] = Field(default=30, description="Time in minutes before a conversation is considered inactive")
     last_run_at: Optional[datetime] = Field(default=None)
 
     client: Optional[Client] = Relationship(back_populates="sync_configs")

@@ -52,7 +52,15 @@ def summarize_conversation(session_id: UUID, provider: str = "gemini") -> Dict[s
     history = get_full_chat_history(session_id)
     if not history:
         logger.warning(f"No history found for session {session_id}")
-        return {}
+        return {
+            "purchase_intent": "None",
+            "urgency_level": "Low",
+            "sentiment_score": "Neutral",
+            "detected_budget": None,
+            "ai_summary": "No history available to summarize.",
+            "contact_info": {},
+            "client_description": None
+        }
 
     history_str = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in history])
 
