@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from sqladmin import Admin
 from sqlalchemy import select
 from app.database import engine, get_session
-from app.admin import authentication_backend, ClientAdmin, SyncConfigAdmin
+from app.admin import authentication_backend, ClientAdmin, SyncConfigAdmin, ServiceConfigAdmin, SubscriptionAdmin, BotSessionAdmin
 from app.models import SyncConfig, Client
 import logging
 
@@ -52,6 +52,9 @@ async def lifespan(app: FastAPI):
     admin = Admin(app, engine, authentication_backend=authentication_backend)
     admin.add_view(ClientAdmin)
     admin.add_view(SyncConfigAdmin)
+    admin.add_view(ServiceConfigAdmin)
+    admin.add_view(SubscriptionAdmin)
+    admin.add_view(BotSessionAdmin)
 
     # Start worker
     task = asyncio.create_task(sync_worker_loop())
