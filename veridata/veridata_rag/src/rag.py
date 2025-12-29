@@ -2,11 +2,9 @@ import os
 import logging
 from typing import List, Dict, Any, Optional
 from uuid import UUID
-
 from llama_index.core import Document
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.llms.gemini import Gemini
-
 from src.db import get_db
 from src.embeddings import CustomGeminiEmbedding
 from src.hyde import generate_hypothetical_answer
@@ -27,8 +25,6 @@ logger = logging.getLogger(__name__)
 
 # Single instance of embedding model
 _embed_model = None
-
-
 
 def summarize_conversation(session_id: UUID, provider: str = "gemini") -> Dict[str, Any]:
     history = get_full_chat_history(session_id)

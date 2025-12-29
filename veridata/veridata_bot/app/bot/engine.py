@@ -64,6 +64,24 @@ async def process_integration_event(client_slug: str, payload: dict, db: AsyncSe
 
             return {"status": "conversation_created_processed"}
 
+        elif event_type in ("contact_created", "contact_updated"):
+            if espo_config:
+                log_external_call(logger, "EspoCRM", f"Syncing contact for {event_type}")
+                try:
+                    espo = EspoClient(
+                        base_url=espo_config["base_url"],
+                        api_key=espo_config["api_key"]
+                    )
+                    # Payload for contact events is the contact itself
+                    await espo.sync_contact(payload)
+                    log_success(logger, f"Contact synced for {event_type}")
+                except Exception as e:
+                    log_error(logger, f"CRM Sync failed for {event_type}: {e}")
+            else:
+                 log_skip(logger, "Skipping CRM sync: EspoCRM not configured")
+
+            return {"status": "contact_event_processed"}
+
         elif event_type == "conversation_status_changed":
             conversation = payload.get("content") or payload # Sometimes it's directly in payload or content
             # Chatwoot webhook structure varies. Usually strict webhook has 'id' at top level for some events, but status change usually has 'status' in top level or inside 'conversation_attributes'
