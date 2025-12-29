@@ -3,6 +3,7 @@ import logging
 from llama_index.multi_modal_llms.gemini import GeminiMultiModal
 from llama_index.core.multi_modal_llms.generic_utils import load_image_urls
 from llama_index.core.schema import ImageDocument
+from src.prompts import IMAGE_DESCRIPTION_PROMPT_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +61,7 @@ def describe_image(image_bytes: bytes, filename: str) -> str:
 
         image = Image.open(io.BytesIO(image_bytes))
 
-        prompt = (
-            "Describe this image in extreme detail for retrieval purposes. "
-            "Include any visible text, numbers, layout structure, and visual elements. "
-            "The goal is to allow someone to find this image by searching for its content."
-        )
+        prompt = IMAGE_DESCRIPTION_PROMPT_TEMPLATE
 
         response = model.generate_content([prompt, image])
         description = response.text

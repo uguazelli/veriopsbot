@@ -3,13 +3,7 @@ from src.llm_factory import get_llm
 
 logger = logging.getLogger(__name__)
 
-HYDE_PROMPT_TEMPLATE = (
-    "Please write a short passage that answers the following question. "
-    "Do not include any explanation, just the answer. "
-    "It does not have to be true, just semantically relevant to the question.\n\n"
-    "Question: {query}\n\n"
-    "Passage:"
-)
+from src.prompts import HYDE_PROMPT_TEMPLATE
 
 def generate_hypothetical_answer(query: str, provider: str = "gemini") -> str:
     try:
