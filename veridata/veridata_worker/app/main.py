@@ -114,6 +114,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Veridata Worker", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse("app/static/favicon.ico")
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "veridata-worker"}
