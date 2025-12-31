@@ -202,6 +202,7 @@ def generate_answer(
         query_embedding = embed_model.get_query_embedding(query)
         cached_answer = check_query_cache(tenant_id, query_embedding)
         if cached_answer:
+            logger.info("⚡ Opt 2 (Cost): Semantic cache HIT. Skipping RAG pipeline.")
             # If session is active, still save the conversation
             if session_id:
                 try:
@@ -210,6 +211,8 @@ def generate_answer(
                 except Exception as e:
                     logger.error(f"Failed to save message history for cached response: {e}")
             return cached_answer, False
+        else:
+            logger.info("❄️ Opt 2 (Cost): Semantic cache MISS. Proceeding to RAG.")
     except Exception as e:
         logger.error(f"Semantic Cache preprocessing failed: {e}")
 
@@ -231,10 +234,11 @@ def generate_answer(
     # Simple queries use 'generation', hard ones use 'complex_reasoning'
     gen_step = "generation"
     if complexity >= 7:
-        logger.info(f"Complex reasoning required (Score: {complexity}). Routing to 'complex_reasoning' model.")
+        logger.info(f"🧠 Opt 3 (Routing): Complexity {complexity} >= 7. Routing to High-Power model.")
         gen_step = "complex_reasoning"
     else:
-        logger.info(f"Simple generation (Score: {complexity}). Using 'generation' model.")
+        logger.info(f"⚡ Opt 3 (Routing): Complexity {complexity} < 7. Routing to Fast/Cheap model.")
+        gen_step = "generation"
 
     # Force human handoff if the intent classifier is unsure but query seems urgent?
     # (Just sticking to the classifier for now)
@@ -409,7 +413,7 @@ def search_documents(
 ) -> List[Dict[str, Any]]:
     search_query = query
     if use_hyde:
-        logger.info(f"Using HyDE expansion with {provider}")
+        logger.info(f"🔍 Opt 1 (Accuracy): Using HyDE expansion with {provider}")
         search_query = generate_hypothetical_answer(query, provider=provider)
 
     # 2. Embed Query
@@ -424,6 +428,7 @@ def search_documents(
     # If using rerank, we fetch more candidates (e.g., 4x the limit) to rerank down
     candidate_limit = limit * 4 if use_rerank else limit
 
+    logger.info(f"🔍 Opt 2 (Accuracy): Performing Hybrid Search (Vector + FTS) with RRF (Limit: {candidate_limit})")
     results = []
     with get_db() as conn:
         with conn.cursor() as cur:
