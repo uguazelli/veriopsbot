@@ -1,0 +1,37 @@
+name: Deploy VeriOps to Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }} # Optional
+          script: |
+            cd /home/administrator/veriopsbot
+
+            echo "📥 Pulling latest code..."
+            git pull origin main
+
+            echo "🛠️ Rebuilding VeriData RAG..."
+            cd veridata/veridata_rag
+            docker compose up --build -d
+
+            echo "🛠️ Rebuilding VeriData Bot..."
+            cd ../veridata_bot
+            docker compose up --build -d
+
+            echo "🛠️ Rebuilding VeriData Worker..."
+            cd ../veridata_worker
+            docker compose up --build -d
+
+            echo "🚀 Deployment Complete!"
