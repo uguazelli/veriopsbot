@@ -1,4 +1,8 @@
 import os
+import httpx
+import csv
+import json
+from io import StringIO
 import logging
 from typing import List, Dict, Any, Optional
 from uuid import UUID
@@ -90,14 +94,15 @@ def analyze_intent(query: str, provider: str = None, handoff_rules: str = None) 
         intent = {
             "requires_rag": data.get('requires_rag', True),
             "requires_human": data.get('requires_human', False),
-            "complexity_score": int(data.get('complexity_score', 5))
+            "complexity_score": int(data.get('complexity_score', 5)),
+            "pricing_intent": data.get('pricing_intent', False)
         }
 
-        logger.info(f"Intent Analysis: RAG={intent['requires_rag']} | HUMAN={intent['requires_human']} | Complexity={intent['complexity_score']}")
+        logger.info(f"Intent Analysis: RAG={intent['requires_rag']} | HUMAN={intent['requires_human']} | Complexity={intent['complexity_score']} | PRICING={intent['pricing_intent']}")
         return intent
     except Exception as e:
         logger.warning(f"Intent analysis failed, defaulting: {e}")
-        return {"requires_rag": True, "requires_human": False, "complexity_score": 5}
+        return {"requires_rag": True, "requires_human": False, "complexity_score": 5, "pricing_intent": False}
 
 def contextualize_query(query: str, history: List[Dict[str, str]], provider: str = None) -> str:
     if not history:
@@ -190,6 +195,49 @@ def add_to_query_cache(tenant_id: UUID, query_text: str, query_embedding: List[f
     except Exception as e:
         logger.error(f"Failed to populate cache: {e}")
 
+def fetch_google_sheet_data(url: str) -> str:
+    """Fetch CSV from Google Sheets and return a summarized text context."""
+    try:
+        # Convert standard URL to export URL
+        if "/edit" in url:
+            url = url.split("/edit")[0] + "/export?format=csv"
+        elif "/view" in url:
+            url = url.split("/view")[0] + "/export?format=csv"
+
+        logger.info(f"🌐 Fetching live data from: {url}")
+        with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+            response = client.get(url)
+            response.raise_for_status()
+
+            f = StringIO(response.text)
+            reader = csv.DictReader(f)
+
+            items = []
+            rows_processed = 0
+            for row in reader:
+                rows_processed += 1
+                # Format: Product (SKU): Price | Notes
+                name = row.get("Product Name") or row.get("item_name")
+                price = row.get("Price") or row.get("item_price")
+                sku = row.get("ID / SKU") or row.get("item_id")
+                notes = row.get("AI Notes (Hidden Rules)") or row.get("context") or ""
+
+                if name:
+                    items.append(f"* {name} ({sku}): {price} | Context: {notes}")
+
+            logger.info(f"📋 Sheet processing complete. Rows processed: {rows_processed}, Items found: {len(items)}")
+
+            if not items:
+                logger.warning("Empty items list after processing CSV.")
+                return ""
+
+            res = "\n[LIVE PRICING & PRODUCT DATA]\n" + "\n".join(items) + "\n\n"
+            # logger.debug(f"FULL INJECTED DATA: {res}")
+            return res
+    except Exception as e:
+        logger.error(f"Failed to fetch Google Sheet: {e}")
+        return ""
+
 def generate_answer(
     tenant_id: UUID,
     query: str,
@@ -197,7 +245,8 @@ def generate_answer(
     use_rerank: Optional[bool] = None,
     provider: Optional[str] = None,
     session_id: Optional[UUID] = None,
-    handoff_rules: Optional[str] = None
+    handoff_rules: Optional[str] = None,
+    google_sheets_url: Optional[str] = None
 ) -> tuple[str, bool]:
     # Resolve optional parameters from global config if not provided
     if use_hyde is None:
@@ -205,7 +254,13 @@ def generate_answer(
     if use_rerank is None:
         use_rerank = get_global_setting("use_rerank", False)
 
-    log_start(logger, f"Generating answer for query: '{query}' | Session={session_id} | Provider={provider}")
+    log_start(logger, f"Generating answer for query: '{query}' | SheetsURL: {google_sheets_url}")
+    if google_sheets_url:
+        logger.info(f"🔗 Google Sheets URL detected in request: {google_sheets_url}")
+    else:
+        logger.warning("⚠️ No Google Sheets URL provided in this request.")
+
+    query_embedding = None
 
     # Fetch Tenant Preferences
     pref_langs = get_tenant_languages(tenant_id)
@@ -217,37 +272,45 @@ def generate_answer(
     # logger.info(f"Language Instruction: '{lang_instruction}'")
 
     # -1. Literal Cache Check (Super Fast, Zero API Cost, Zero Latency)
-    cached_answer = check_literal_cache(tenant_id, query)
-    if cached_answer:
-        logger.info("🚀 Opt 0 (Speed): Literal cache HIT (Exact match).")
-        if session_id:
-            try:
-                add_message(session_id, "user", query)
-                add_message(session_id, "ai", cached_answer)
-            except Exception as e:
-                logger.error(f"Failed to save history for literal cache hit: {e}")
-        return cached_answer, False
-
-    # 0. Semantic Cache Check (Saves ALL subsequent steps)
-    embed_model = get_embed_model()
-    query_embedding = None
-    try:
-        query_embedding = embed_model.get_query_embedding(query)
-        cached_answer = check_query_cache(tenant_id, query_embedding)
+    # Skip if we are using live Google Sheets to ensure real-time data
+    if not google_sheets_url:
+        cached_answer = check_literal_cache(tenant_id, query)
         if cached_answer:
-            logger.info("⚡ Opt 2 (Cost): Semantic cache HIT. Skipping RAG pipeline.")
-            # If session is active, still save the conversation
+            logger.info("🚀 Opt 0 (Speed): Literal cache HIT (Exact match).")
             if session_id:
                 try:
                     add_message(session_id, "user", query)
                     add_message(session_id, "ai", cached_answer)
                 except Exception as e:
-                    logger.error(f"Failed to save message history for cached response: {e}")
+                    logger.error(f"Failed to save history for literal cache hit: {e}")
             return cached_answer, False
-        else:
-            logger.info("❄️ Opt 2 (Cost): Semantic cache MISS. Proceeding to RAG.")
-    except Exception as e:
-        logger.error(f"Semantic Cache preprocessing failed: {e}")
+    else:
+        logger.info("⏭️ Skipping Literal Cache: Google Sheets URL present (Live Data mode).")
+
+    # 0. Semantic Cache Check (Saves ALL subsequent steps)
+    # Skip if we are using live Google Sheets to ensure real-time data
+    if not google_sheets_url:
+        embed_model = get_embed_model()
+        query_embedding = None
+        try:
+            query_embedding = embed_model.get_query_embedding(query)
+            cached_answer = check_query_cache(tenant_id, query_embedding)
+            if cached_answer:
+                logger.info("⚡ Opt 2 (Cost): Semantic cache HIT. Skipping RAG pipeline.")
+                # If session is active, still save the conversation
+                if session_id:
+                    try:
+                        add_message(session_id, "user", query)
+                        add_message(session_id, "ai", cached_answer)
+                    except Exception as e:
+                        logger.error(f"Failed to save message history for cached response: {e}")
+                return cached_answer, False
+            else:
+                logger.info("❄️ Opt 2 (Cost): Semantic cache MISS. Proceeding to RAG.")
+        except Exception as e:
+            logger.error(f"Semantic Cache preprocessing failed: {e}")
+    else:
+        logger.info("⏭️ Skipping Semantic Cache: Google Sheets URL present (Live Data mode).")
 
     # 1. Handle Memory (Contextualization)
     search_query = query
@@ -259,9 +322,16 @@ def generate_answer(
 
     # 2. Intent Classification (Small Talk vs RAG vs Human)
     intent = analyze_intent(search_query, provider, handoff_rules)
+    logger.info(f"🔍 DEBUG INTENT: {intent}")
     requires_rag = intent["requires_rag"]
     requires_human = intent["requires_human"]
     complexity = intent["complexity_score"]
+    pricing_intent = intent.get("pricing_intent", False)
+
+    # Force RAG mode if pricing intent is detected to ensure spreadsheet fetch
+    if pricing_intent:
+        requires_rag = True
+        logger.info("🎯 Pricing intent detected: Forcing RAG=True to fetch spreadsheet.")
 
     # 2.1 Route to appropriate model brain
     # Simple queries use 'generation', hard ones use 'complex_reasoning'
@@ -309,13 +379,35 @@ def generate_answer(
             provider=provider
         )
 
-        if not results:
-            # If no docs found, try answering from history alone if possible, or fail gracefully
-            context_str = "No relevant documents found."
+        if results:
+            doc_context = "\n\n".join([f"Source: {r['filename']}\n{r['content']}" for r in results])
         else:
-            context_str = "\n\n".join([f"Source: {r['filename']}\n{r['content']}" for r in results])
+            doc_context = ""
 
-        # 3. Prompt (RAG)
+        # 3.1 Live Pricing Injection (Google Sheets)
+        live_data = ""
+        if pricing_intent and google_sheets_url:
+            logger.info(f"📊 Opt 1 (Live Data): Intent is PRICING. Attempting to fetch...")
+            live_data = fetch_google_sheet_data(google_sheets_url)
+            if live_data:
+                logger.info(f"✅ Opt 1 (Live Data): Data successfully fetched and ready to inject.")
+                # Add a strong instruction for the LLM
+                lang_instruction += "\nIMPORTANT: Use the [LIVE PRICING & PRODUCT DATA] section for any mention of products or costs. Trust it over other data. Be flexible with names (e.g., 'consultoria' matches 'Consulting Hour')."
+            else:
+                logger.error("❌ Opt 1 (Live Data): Pricing intent was TRUE but FETCH FAILED or returned no items.")
+        elif google_sheets_url:
+            logger.info(f"ℹ️ Opt 1 (Live Data): Skipping spreadsheet because pricing_intent is FALSE. Query: '{search_query}'")
+
+        # Combine them
+        context_str = ""
+        if live_data:
+            context_str += live_data
+        if doc_context:
+            context_str += "\n" + doc_context
+
+        if not context_str:
+            context_str = "No relevant documents or live data found."
+
         # 3. Prompt (RAG)
         prompt = RAG_ANSWER_PROMPT_TEMPLATE.format(
             lang_instruction=lang_instruction,

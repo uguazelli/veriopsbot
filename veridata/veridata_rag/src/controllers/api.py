@@ -27,7 +27,8 @@ async def api_query_rag(request: QueryRequest):
         use_rerank=request.use_rerank,
         provider=request.provider,
         session_id=session_id,
-        handoff_rules=request.handoff_rules
+        handoff_rules=request.handoff_rules,
+        google_sheets_url=request.google_sheets_url
     )
     return QueryResponse(
         answer=answer,

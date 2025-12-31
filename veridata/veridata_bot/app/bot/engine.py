@@ -328,6 +328,11 @@ async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
         if handoff_rules:
             query_params["handoff_rules"] = handoff_rules
 
+        # Extract google sheets url
+        gs_url = rag_config.get("google_sheets_url")
+        if gs_url:
+            query_params["google_sheets_url"] = gs_url
+
         log_external_call(logger, "Veridata RAG", f"Query: '{user_query}' | Params: {query_params}")
         rag_response = await rag_client.query(
             message=user_query,

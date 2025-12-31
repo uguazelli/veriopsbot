@@ -10,6 +10,7 @@ class QueryRequest(BaseModel):
     provider: Optional[str] = None
     session_id: Optional[UUID] = None
     handoff_rules: Optional[str] = None
+    google_sheets_url: Optional[str] = None
 
 class QueryResponse(BaseModel):
     answer: str
