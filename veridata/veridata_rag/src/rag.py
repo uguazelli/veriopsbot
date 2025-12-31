@@ -72,7 +72,8 @@ def summarize_conversation(session_id: UUID, provider: str = None) -> Dict[str, 
         }
 
 
-def analyze_intent(query: str, provider: str = None, handoff_rules: str = None) -> Dict[str, bool]:
+def analyze_intent(query: str, provider: str = None, handoff_rules: str = None) -> dict:
+    """Classify if query is RAG, Human Handoff, or Small Talk, and rank complexity."""
     try:
         llm = get_llm(step="intent", provider=provider)
 
@@ -85,13 +86,18 @@ def analyze_intent(query: str, provider: str = None, handoff_rules: str = None) 
         text = response.text.replace('```json', '').replace('```', '').strip()
         import json
         data = json.loads(text)
-        requires_rag = data.get('requires_rag', True)
-        requires_human = data.get('requires_human', False)
-        logger.info(f"Intent Classification: '{query}' -> RAG: {requires_rag}, Human: {requires_human}")
-        return {"requires_rag": requires_rag, "requires_human": requires_human}
+
+        intent = {
+            "requires_rag": data.get('requires_rag', True),
+            "requires_human": data.get('requires_human', False),
+            "complexity_score": int(data.get('complexity_score', 5))
+        }
+
+        logger.info(f"Intent Analysis: RAG={intent['requires_rag']} | HUMAN={intent['requires_human']} | Complexity={intent['complexity_score']}")
+        return intent
     except Exception as e:
-        logger.warning(f"Intent classification failed, defaulting to RAG=True, Human=False: {e}")
-        return {"requires_rag": True, "requires_human": False}
+        logger.warning(f"Intent analysis failed, defaulting: {e}")
+        return {"requires_rag": True, "requires_human": False, "complexity_score": 5}
 
 def contextualize_query(query: str, history: List[Dict[str, str]], provider: str = None) -> str:
     if not history:
@@ -219,6 +225,16 @@ def generate_answer(
     intent = analyze_intent(search_query, provider, handoff_rules)
     requires_rag = intent["requires_rag"]
     requires_human = intent["requires_human"]
+    complexity = intent["complexity_score"]
+
+    # 2.1 Route to appropriate model brain
+    # Simple queries use 'generation', hard ones use 'complex_reasoning'
+    gen_step = "generation"
+    if complexity >= 7:
+        logger.info(f"Complex reasoning required (Score: {complexity}). Routing to 'complex_reasoning' model.")
+        gen_step = "complex_reasoning"
+    else:
+        logger.info(f"Simple generation (Score: {complexity}). Using 'generation' model.")
 
     # Force human handoff if the intent classifier is unsure but query seems urgent?
     # (Just sticking to the classifier for now)
@@ -234,7 +250,7 @@ def generate_answer(
             search_query=search_query
         )
         try:
-            llm = get_llm(step="generation", provider=provider)
+            llm = get_llm(step=gen_step, provider=provider)
             response = llm.complete(prompt)
             return response.text.strip(), True
         except Exception as e:
@@ -273,7 +289,7 @@ def generate_answer(
 
         # 4. Generate
         try:
-            llm = get_llm(step="generation", provider=provider)
+            llm = get_llm(step=gen_step, provider=provider)
             response = llm.complete(prompt)
             answer = response.text
         except Exception as e:
@@ -288,7 +304,7 @@ def generate_answer(
             search_query=search_query
         )
         try:
-            llm = get_llm(step="generation", provider=provider)
+            llm = get_llm(step=gen_step, provider=provider)
             response = llm.complete(prompt)
             answer = response.text
         except Exception as e:
