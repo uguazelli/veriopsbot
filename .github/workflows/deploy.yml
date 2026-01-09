@@ -16,21 +16,28 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           script: |
-            cd /home/administrator/veriopsbot
+            # Set the project root to avoid navigation errors
+            PROJECT_ROOT="/home/administrator/veriopsbot"
 
             echo "📥 Pulling latest code..."
+            cd $PROJECT_ROOT
             git pull origin main
 
-            echo "🛠️ Rebuilding VeriData RAG..."
-            cd veridata/veridata_rag
+            echo "🛠️ Rebuilding Databases"
+            cd $PROJECT_ROOT/databases
             docker compose up --build -d
 
-            echo "🛠️ Rebuilding VeriData Bot..."
-            cd ../veridata_bot
+            echo "🛠️ Rebuilding Chatwoot"
+            cd $PROJECT_ROOT/chatwoot
             docker compose up --build -d
 
-            echo "🛠️ Rebuilding VeriData Worker..."
-            cd ../veridata_worker
+            echo "🛠️ Rebuilding EspoCRM"
+            # Pointing to the correct 'crm' subfolder
+            cd $PROJECT_ROOT/espocrm/crm
+            docker compose up --build -d
+
+            echo "🛠️ Rebuilding VeriData"
+            cd $PROJECT_ROOT/veridata
             docker compose up --build -d
 
             echo "🚀 Deployment Complete!"

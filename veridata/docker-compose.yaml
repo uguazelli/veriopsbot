@@ -1,0 +1,4 @@
+include:
+  - path: ./veridata_bot/docker-compose.yml
+  - path: ./veridata_rag/docker-compose.yml
+  - path: ./veridata_worker/docker-compose.yml
