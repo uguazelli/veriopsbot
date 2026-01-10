@@ -35,7 +35,7 @@ async def api_query_rag(request: QueryRequest):
         provider=request.provider,
         session_id=session_id,
         handoff_rules=request.handoff_rules,
-        google_sheets_url=request.google_sheets_url,
+
         complexity_score=request.complexity_score,
         pricing_intent=request.pricing_intent,
         external_context=request.external_context

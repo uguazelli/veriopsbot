@@ -1,14 +1,9 @@
 import os
-import httpx
-import csv
-import json
-from io import StringIO
 import logging
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 from llama_index.core import Document
 from llama_index.core.node_parser import SentenceSplitter
-from llama_index.llms.gemini import Gemini
 from src.db import get_db
 from src.embeddings import CustomGeminiEmbedding
 from src.hyde import generate_hypothetical_answer
@@ -121,48 +116,7 @@ def add_to_query_cache(tenant_id: UUID, query_text: str, query_embedding: List[f
     except Exception as e:
         logger.error(f"Failed to populate cache: {e}")
 
-def fetch_google_sheet_data(url: str) -> str:
-    """Fetch CSV from Google Sheets and return a summarized text context."""
-    try:
-        # Convert standard URL to export URL
-        if "/edit" in url:
-            url = url.split("/edit")[0] + "/export?format=csv"
-        elif "/view" in url:
-            url = url.split("/view")[0] + "/export?format=csv"
 
-        logger.info(f"🌐 Fetching live data from: {url}")
-        with httpx.Client(timeout=30.0, follow_redirects=True) as client:
-            response = client.get(url)
-            response.raise_for_status()
-
-            f = StringIO(response.text)
-            reader = csv.DictReader(f)
-
-            items = []
-            rows_processed = 0
-            for row in reader:
-                rows_processed += 1
-                # Format: Product (SKU): Price | Notes
-                name = row.get("Product Name") or row.get("item_name")
-                price = row.get("Price") or row.get("item_price")
-                sku = row.get("ID / SKU") or row.get("item_id")
-                notes = row.get("AI Notes (Hidden Rules)") or row.get("context") or ""
-
-                if name:
-                    items.append(f"* {name} ({sku}): {price} | Context: {notes}")
-
-            logger.info(f"📋 Sheet processing complete. Rows processed: {rows_processed}, Items found: {len(items)}")
-
-            if not items:
-                logger.warning("Empty items list after processing CSV.")
-                return ""
-
-            res = "\n[LIVE PRICING & PRODUCT DATA]\n" + "\n".join(items) + "\n\n"
-            # logger.debug(f"FULL INJECTED DATA: {res}")
-            return res
-    except Exception as e:
-        logger.error(f"Failed to fetch Google Sheet: {e}")
-        return ""
 
 def generate_answer(
     tenant_id: UUID,
@@ -172,7 +126,7 @@ def generate_answer(
     provider: Optional[str] = None,
     session_id: Optional[UUID] = None,
     handoff_rules: Optional[str] = None,
-    google_sheets_url: Optional[str] = None,
+
     # skip_routing: bool = False, # DEPRECATED/REMOVED
     complexity_score: int = 5,
     pricing_intent: bool = False,
@@ -184,11 +138,7 @@ def generate_answer(
     if use_rerank is None:
         use_rerank = get_global_setting("use_rerank", False)
 
-    log_start(logger, f"Generating answer for query: '{query}' | SheetsURL: {google_sheets_url}")
-    if google_sheets_url:
-        logger.info(f"🔗 Google Sheets URL detected in request: {google_sheets_url}")
-    else:
-        logger.warning("⚠️ No Google Sheets URL provided in this request.")
+    log_start(logger, f"Generating answer for query: '{query}'")
 
     query_embedding = None
 
@@ -203,7 +153,7 @@ def generate_answer(
 
     # -1. Literal Cache Check (Super Fast, Zero API Cost, Zero Latency)
     # Skip if we are using live Google Sheets to ensure real-time data
-    if not google_sheets_url:
+    if not external_context:
         cached_answer = check_literal_cache(tenant_id, query)
         if cached_answer:
             logger.info("🚀 Opt 0 (Speed): Literal cache HIT (Exact match).")
@@ -215,11 +165,11 @@ def generate_answer(
                     logger.error(f"Failed to save history for literal cache hit: {e}")
             return cached_answer, False
     else:
-        logger.info("⏭️ Skipping Literal Cache: Google Sheets URL present (Live Data mode).")
+        logger.info("⏭️ Skipping Literal Cache: External Context present (Live Data mode).")
 
     # 0. Semantic Cache Check (Saves ALL subsequent steps)
     # Skip if we are using live Google Sheets to ensure real-time data
-    if not google_sheets_url:
+    if not external_context:
         embed_model = get_embed_model()
         query_embedding = None
         try:
@@ -318,16 +268,11 @@ def generate_answer(
             doc_context = ""
 
         # 3.1 Live Pricing Injection (External Context)
+        live_data = ""
         if external_context:
              logger.info("📊 Opt 1 (Live Data): Injecting external context provided by Bot.")
              lang_instruction += "\nIMPORTANT: Use the [LIVE PRICING & PRODUCT DATA] section for any mention of products or costs. Trust it over other data. Be flexible with names (e.g., 'consultoria' matches 'Consulting Hour')."
              live_data = external_context
-        elif pricing_intent and google_sheets_url:
-             # Legacy Fallback/Deprecated
-             logger.warning(f"⚠️ Opt 1 (Live Data): Internal fetch triggered (legacy). Provide 'external_context' instead.")
-             live_data = fetch_google_sheet_data(google_sheets_url)
-             if live_data:
-                lang_instruction += "\nIMPORTANT: Use the [LIVE PRICING & PRODUCT DATA] section for any mention of products or costs. Trust it over other data. Be flexible with names (e.g., 'consultoria' matches 'Consulting Hour')."
 
         # Combine them
         context_str = ""

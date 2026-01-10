@@ -112,6 +112,7 @@ async def rag_node(state: AgentState):
     rag_url = str(settings.rag_service_url)
     rag_key = settings.rag_api_key
     raw_tenant_id = state.get("tenant_id")
+    # Default to Dummy UUID for dev/test resilience if tenant context is missing
     tenant_id = "00000000-0000-0000-0000-000000000000"
 
     try:
@@ -151,7 +152,7 @@ async def rag_node(state: AgentState):
             session_id=session_uuid,
             complexity_score=complexity_score,
             pricing_intent=pricing_intent,
-            google_sheets_url=google_sheets_url, # Still passed for legacy/logging
+
             external_context=external_context
         )
 

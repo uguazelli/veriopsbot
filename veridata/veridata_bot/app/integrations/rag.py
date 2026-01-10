@@ -31,7 +31,7 @@ class RagClient:
         session_id: uuid.UUID | None = None,
         complexity_score: int = 5,
         pricing_intent: bool = False,
-        google_sheets_url: str | None = None,
+
         external_context: str | None = None,
         **kwargs
     ) -> dict:
@@ -44,7 +44,6 @@ class RagClient:
                 "tenant_id": self.tenant_id,
                 "complexity_score": complexity_score,
                 "pricing_intent": pricing_intent,
-                "google_sheets_url": google_sheets_url,
                 "external_context": external_context,
                 **kwargs
             }
