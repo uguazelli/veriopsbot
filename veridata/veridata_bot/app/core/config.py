@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     app_port: int = 4019
     admin_user: str = "vd"
     admin_password: str = "vd"
+    rag_service_url: str = "http://veridata.rag:8000"
+    rag_api_key: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

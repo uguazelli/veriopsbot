@@ -16,6 +16,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-veridata_pass}
       - POSTGRES_HOST=${POSTGRES_HOST:-veridata.postgres}
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     volumes:
       - .:/app
     develop:

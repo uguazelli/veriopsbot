@@ -33,6 +33,8 @@ async def run_integration_bg(client_slug: str, payload: dict):
 
 # API
 app.include_router(api_router, prefix="/api/v1")
+# from app.api.agent import router as agent_router
+# app.include_router(agent_router, prefix="/api/v1/agent", tags=["Agent Shadow"])
 app.include_router(ops_router, prefix="/ops", tags=["ops"])
 
 # Webhooks

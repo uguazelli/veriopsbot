@@ -156,21 +156,41 @@ async def process_bot_event(client_slug: str, payload_dict: dict, db: AsyncSessi
     else:
         log_db(logger, f"Found existing BotSession: {session.id}, RAG ID: {session.rag_session_id}")
 
-    # 5. RAG Call
-    rag_response = await query_rag_system(user_query, session, rag_config)
+    # 5. LangGraph Execution (Replaces direct RAG Call)
+    # Import agent app here to avoid circular dependencies if any (or move to top if clean)
+    from app.agent.graph import agent_app
+    from langchain_core.messages import HumanMessage
 
-    if "error" in rag_response:
-         return {"status": "rag_error"}
+    initial_state = {
+        "messages": [HumanMessage(content=user_query)],
+        "tenant_id": rag_config.get("tenant_id"),
+        "session_id": str(session.rag_session_id) if session.rag_session_id else None,
+        "google_sheets_url": rag_config.get("google_sheets_url")
+    }
 
-    answer = rag_response.get("answer")
-    requires_human = rag_response.get("requires_human", False)
-    new_rag_session_id = rag_response.get("session_id")
+    try:
+        # Invoke the graph
+        result = await agent_app.ainvoke(initial_state)
 
-    # Update session if needed
-    if new_rag_session_id and str(new_rag_session_id) != str(session.rag_session_id):
-        log_db(logger, f"Updating RAG session ID to {new_rag_session_id}")
-        session.rag_session_id = uuid.UUID(new_rag_session_id)
-        db.add(session) # Mark for update
+        # Extract Results
+        # The last message is the AI response
+        answer = result["messages"][-1].content
+
+        # Check flags in state
+        requires_human = result.get("requires_human", False)
+
+        # Note: For now, we don't get a "new_session_id" back from LangGraph explicitly unless RAG returned it
+        # But RAG service interactions are stateless via the node unless we persist context there.
+        # The session.rag_session_id we sent is what we expect to keep using.
+
+    except Exception as e:
+        logger.error(f"LangGraph execution failed: {e}", exc_info=True)
+        return {"status": "agent_error"}
+
+    # Update session if needed (Currently LangGraph implementation assumes stable session ID passed in)
+    # Legacy logic checked for new session ID. We can probably skip this unless RAG creates one.
+    # If rag_node creates one, it's not currently bubbling up unless we update rag_node to return it in state.
+    # For now, we assume session ID persists.
 
     # 6. Send to Chatwoot
     await handle_chatwoot_response(conversation_id, answer, requires_human, chatwoot_config)

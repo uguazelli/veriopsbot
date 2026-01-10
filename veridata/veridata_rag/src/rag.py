@@ -20,7 +20,6 @@ from src.logging import log_start, log_success, log_error, log_llm, log_skip, lo
 from src.prompts import (
     SUMMARY_PROMPT_TEMPLATE,
     CONTEXTUALIZE_PROMPT_TEMPLATE,
-    INTENT_PROMPT_TEMPLATE,
     HANDOFF_PROMPT_TEMPLATE,
     RAG_ANSWER_PROMPT_TEMPLATE,
     SMALL_TALK_PROMPT_TEMPLATE
@@ -76,33 +75,7 @@ def summarize_conversation(session_id: UUID, provider: str = None) -> Dict[str, 
         }
 
 
-def analyze_intent(query: str, provider: str = None, handoff_rules: str = None) -> dict:
-    """Classify if query is RAG, Human Handoff, or Small Talk, and rank complexity."""
-    try:
-        llm = get_llm(step="intent", provider=provider)
 
-        rules_text = ""
-        if handoff_rules:
-            rules_text = f"Additional Tenant Rules:\n{handoff_rules}"
-
-        prompt = INTENT_PROMPT_TEMPLATE.format(query=query, handoff_rules=rules_text)
-        response = llm.complete(prompt)
-        text = response.text.replace('```json', '').replace('```', '').strip()
-        import json
-        data = json.loads(text)
-
-        intent = {
-            "requires_rag": data.get('requires_rag', True),
-            "requires_human": data.get('requires_human', False),
-            "complexity_score": int(data.get('complexity_score', 5)),
-            "pricing_intent": data.get('pricing_intent', False)
-        }
-
-        logger.info(f"Intent Analysis: RAG={intent['requires_rag']} | HUMAN={intent['requires_human']} | Complexity={intent['complexity_score']} | PRICING={intent['pricing_intent']}")
-        return intent
-    except Exception as e:
-        logger.warning(f"Intent analysis failed, defaulting: {e}")
-        return {"requires_rag": True, "requires_human": False, "complexity_score": 5, "pricing_intent": False}
 
 def contextualize_query(query: str, history: List[Dict[str, str]], provider: str = None) -> str:
     if not history:
@@ -246,7 +219,10 @@ def generate_answer(
     provider: Optional[str] = None,
     session_id: Optional[UUID] = None,
     handoff_rules: Optional[str] = None,
-    google_sheets_url: Optional[str] = None
+    google_sheets_url: Optional[str] = None,
+    # skip_routing: bool = False, # DEPRECATED/REMOVED
+    complexity_score: int = 5,
+    pricing_intent: bool = False
 ) -> tuple[str, bool]:
     # Resolve optional parameters from global config if not provided
     if use_hyde is None:
@@ -321,17 +297,17 @@ def generate_answer(
             search_query = contextualize_query(query, history, provider)
 
     # 2. Intent Classification (Small Talk vs RAG vs Human)
-    intent = analyze_intent(search_query, provider, handoff_rules)
-    logger.info(f"🔍 DEBUG INTENT: {intent}")
-    requires_rag = intent["requires_rag"]
-    requires_human = intent["requires_human"]
-    complexity = intent["complexity_score"]
-    pricing_intent = intent.get("pricing_intent", False)
+    # If skip_routing is True (called from LangGraph bot), we FORCE RAG.
 
-    # Force RAG mode if pricing intent is detected to ensure spreadsheet fetch
+
+    # Intent Analysis is now handled by the Bot Router.
+    # We rely on the passed parameters.
+    requires_rag = True
+    requires_human = False
+    complexity = 5 if complexity_score is None else complexity_score
+
     if pricing_intent:
-        requires_rag = True
-        logger.info("🎯 Pricing intent detected: Forcing RAG=True to fetch spreadsheet.")
+        logger.info("🎯 Pricing intent detected: Fetching spreadsheet.")
 
     # 2.1 Route to appropriate model brain
     # Simple queries use 'generation', hard ones use 'complex_reasoning'

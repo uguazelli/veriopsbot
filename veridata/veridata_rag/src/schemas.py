@@ -11,6 +11,8 @@ class QueryRequest(BaseModel):
     session_id: Optional[UUID] = None
     handoff_rules: Optional[str] = None
     google_sheets_url: Optional[str] = None
+    complexity_score: Optional[int] = 5
+    pricing_intent: Optional[bool] = False
 
 class QueryResponse(BaseModel):
     answer: str

@@ -34,35 +34,7 @@ CONTEXTUALIZE_PROMPT_TEMPLATE = (
     "Standalone Question:"
 )
 
-INTENT_PROMPT_TEMPLATE = (
-    "You are a router. Analyze the user's query and decide on two things:\n"
-    "1. Does it require looking up external documents? (RAG)\n"
-    "2. Does the user explicitly ask to speak to a human agent? (HUMAN)\n\n"
-    "Rules for RAG:\n"
-    "1. Greetings, thanks, or personal questions -> RAG = FALSE\n"
-    "2. Questions about entities, products, policies, facts -> RAG = TRUE\n"
-    "3. Ambiguous questions -> RAG = TRUE\n"
-    "4. Unsure -> RAG = TRUE\n\n"
-    "Rules for HUMAN:\n"
-    "1. User says 'talk to human', 'real person', 'support agent', 'manager' -> HUMAN = TRUE\n"
-    "{handoff_rules}\n"
-    "2. Otherwise -> HUMAN = FALSE\n\n"
-    "Complexity Analysis (COMPLEXITY):\n"
-    "Rank complexity from 1 to 10:\n"
-    "1-3: Simple greeting, thanks, or simple single-fact question.\n"
-    "4-6: Requires understanding context or summarizing a few points.\n"
-    "7-10: Requires multi-step reasoning, comparison, or handling ambiguous/creative requests.\n\n"
-    "Pricing/Product Intent (PRICING):\n"
-    "- Set 'pricing_intent' to true if user asks about: costs, prices, investment, specific products, availability, or ROI.\n"
-    "- Flag TRUE for keywords like: 'quanto custa', 'valor', 'preço', 'pagamento', 'investimento', 'disponibilidade', 'tempo de consultoria', 'hora'.\n\n"
-    "Return JSON with keys:\n"
-    "- 'requires_rag' (bool)\n"
-    "- 'requires_human' (bool)\n"
-    "- 'complexity_score' (int, 1-10)\n"
-    "- 'pricing_intent' (bool)\n\n"
-    "Query: {query}\n\n"
-    "JSON Output:"
-)
+
 
 RERANK_PROMPT_TEMPLATE = (
     "You are a relevance ranking system. "

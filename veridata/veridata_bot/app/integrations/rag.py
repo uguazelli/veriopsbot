@@ -25,7 +25,15 @@ class RagClient:
                  headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
-    async def query(self, message: str, session_id: uuid.UUID | None = None, **kwargs) -> dict:
+    async def query(
+        self,
+        message: str,
+        session_id: uuid.UUID | None = None,
+        complexity_score: int = 5,
+        pricing_intent: bool = False,
+        google_sheets_url: str | None = None,
+        **kwargs
+    ) -> dict:
         async with httpx.AsyncClient(timeout=60.0) as client:
             url = f"{self.base_url}/api/query"
 
@@ -33,11 +41,13 @@ class RagClient:
             payload = {
                 "query": message,
                 "tenant_id": self.tenant_id,
-                "tenant_id": self.tenant_id,
-                **kwargs # provider, use_hyde, use_rerank, handoff_rules etc.
+                "complexity_score": complexity_score,
+                "pricing_intent": pricing_intent,
+                "google_sheets_url": google_sheets_url,
+                **kwargs
             }
 
-            logger.info(f"RAG Request to {url}. Payload keys: {list(payload.keys())}")
+            logger.info(f"RAG Request to {url}. Payload: {payload}")
 
             if session_id:
                 payload["session_id"] = str(session_id)
@@ -45,6 +55,10 @@ class RagClient:
             headers = self._get_headers()
 
             resp = await client.post(url, json=payload, headers=headers)
+
+            if resp.status_code != 200:
+                logger.error(f"RAG Error {resp.status_code}: {resp.text}")
+
             resp.raise_for_status()
             return resp.json()
             # Expected response: {"answer": "...", "requires_human": true, "session_id": "..."}
