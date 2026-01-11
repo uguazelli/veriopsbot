@@ -253,12 +253,35 @@ async def process_bot_event(client_slug: str, payload_dict: dict, db: AsyncSessi
 
     try:
         from langfuse.langchain import CallbackHandler
+
+        # Prepare Langfuse Context (Session & User)
+        lf_user_id = "unknown_user"
+        if event.sender:
+             # Priority: Email -> Phone -> ID -> Name
+             if event.sender.email:
+                 lf_user_id = event.sender.email
+             elif event.sender.phone_number:
+                 lf_user_id = event.sender.phone_number
+             elif event.sender.id:
+                 lf_user_id = str(event.sender.id)
+             elif event.sender.name:
+                 lf_user_id = event.sender.name
+
+        # Use Chatwoot Conversation ID as the Trace Session
+        lf_session_id = conversation_id or "unknown_session"
+
         langfuse_handler = CallbackHandler()
 
-        # Pass the callback handler to the invoke method
+        # Pass context via metadata (Langfuse specific keys)
         result = await agent_app.ainvoke(
             initial_state,
-            config={"callbacks": [langfuse_handler]}
+            config={
+                "callbacks": [langfuse_handler],
+                "metadata": {
+                    "langfuse_user_id": lf_user_id,
+                    "langfuse_session_id": lf_session_id,
+                }
+            }
         )
         answer = result["messages"][-1].content
         logger.info(f"DEBUG: Agent Answer: {answer}")
