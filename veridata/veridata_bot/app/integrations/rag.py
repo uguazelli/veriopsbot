@@ -60,18 +60,7 @@ class RagClient:
             resp.raise_for_status()
             return resp.json()
 
-    async def transcribe(self, file_bytes: bytes, filename: str, provider: str = "gemini") -> str:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            url = f"{self.base_url}/api/transcribe"
 
-            headers = self._get_headers()
-
-            files = {"file": (filename, file_bytes)}
-            data = {"provider": provider}
-
-            resp = await client.post(url, data=data, files=files, headers=headers)
-            resp.raise_for_status()
-            return resp.json().get("text", "")
 
     async def summarize(self, session_id: uuid.UUID, provider: str = "gemini") -> dict:
         async with httpx.AsyncClient(timeout=60.0) as client:

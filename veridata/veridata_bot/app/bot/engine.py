@@ -3,6 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from app.models.session import BotSession
 from app.models.subscription import Subscription
+from app.agent.graph import agent_app
+from langchain_core.messages import HumanMessage, AIMessage
 import logging
 import uuid
 from app.core.logging import log_start, log_skip, log_success, log_error, log_db
@@ -147,9 +149,6 @@ async def process_bot_event(client_slug: str, payload_dict: dict, db: AsyncSessi
         await db.refresh(session)
     else:
         log_db(logger, f"Found existing BotSession: {session.id}, RAG ID: {session.rag_session_id}")
-
-    from app.agent.graph import agent_app
-    from langchain_core.messages import HumanMessage, AIMessage
 
     history_messages = []
     if session and session.rag_session_id:

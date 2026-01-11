@@ -6,7 +6,7 @@ from app.core.db import async_session_maker
 import logging
 from app.core.logging import setup_logging
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
-from app.ops import router as ops_router
+from app.api.ops import router as ops_router
 
 setup_logging()
 logger = logging.getLogger(__name__)
