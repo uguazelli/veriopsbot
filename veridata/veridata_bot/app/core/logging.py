@@ -29,16 +29,10 @@ class PrettyJSONFormatter(logging.Formatter):
                  pass
         return super().format(record)
 
-def setup_logging(log_level=logging.INFO, log_dir="logs", log_filename="veridata_bot.log"):
+def setup_logging(log_level=logging.INFO):
     """
-    Configures logging with Console and Rotating File handlers.
+    Configures logging with Console handler only (Docker/Dozzle friendly).
     """
-    # Ensure log directory exists
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-
-    log_file_path = os.path.join(log_dir, log_filename)
-
     logging_config = {
         "version": 1,
         "disable_existing_loggers": False,
@@ -57,30 +51,21 @@ def setup_logging(log_level=logging.INFO, log_dir="logs", log_filename="veridata
                 "stream": sys.stdout,
                 "formatter": "pretty",
                 "level": log_level
-            },
-            "file": {
-                "class": "logging.handlers.RotatingFileHandler",
-                "filename": log_file_path,
-                "maxBytes": 10 * 1024 * 1024, # 10 MB
-                "backupCount": 5,
-                "formatter": "pretty",
-                "level": log_level,
-                "encoding": "utf-8"
             }
         },
         "root": {
-            "handlers": ["console", "file"],
+            "handlers": ["console"],
             "level": log_level
         },
         "loggers": {
             "uvicorn": {
-                "handlers": ["console", "file"],
+                "handlers": ["console"],
                 "level": "INFO",
                 "propagate": False
             },
             "sqlalchemy.engine": {
-                "handlers": ["console", "file"],
-                "level": "WARNING", # Prevent SQL spam unless debugging
+                "handlers": ["console"],
+                "level": "WARNING",
                 "propagate": False
             }
         }

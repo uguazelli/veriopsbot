@@ -22,7 +22,7 @@ class LogsView(BaseView):
         return RedirectResponse(url="/ops/logs/view")
 
 # Configure logging
-setup_logging(log_filename="veridata_worker.log")
+setup_logging()
 logger = logging.getLogger(__name__)
 
 from app.jobs.auto_resolve import run_auto_resolve_job

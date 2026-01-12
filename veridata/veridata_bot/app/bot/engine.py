@@ -251,10 +251,6 @@ async def process_bot_event(client_slug: str, payload_dict: dict, db: AsyncSessi
 
     logger.info(f"DEBUG: Graph Input Messages: {[m.content for m in full_messages]}")
 
-    # Prepare Agent Config (Callbacks & Metadata)
-    callbacks = []
-    metadata = {}
-
     try:
         from langfuse.langchain import CallbackHandler
 
@@ -275,23 +271,16 @@ async def process_bot_event(client_slug: str, payload_dict: dict, db: AsyncSessi
         lf_session_id = conversation_id or "unknown_session"
 
         langfuse_handler = CallbackHandler()
-        callbacks.append(langfuse_handler)
 
-        metadata = {
-            "langfuse_user_id": lf_user_id,
-            "langfuse_session_id": lf_session_id,
-        }
-
-    except Exception as e:
-        logger.warning(f"Langfuse initialization failed: {e}. Proceeding without tracing.")
-
-    try:
         # Pass context via metadata (Langfuse specific keys)
         result = await agent_app.ainvoke(
             initial_state,
             config={
-                "callbacks": callbacks,
-                "metadata": metadata
+                "callbacks": [langfuse_handler],
+                "metadata": {
+                    "langfuse_user_id": lf_user_id,
+                    "langfuse_session_id": lf_session_id,
+                }
             }
         )
         answer = result["messages"][-1].content
