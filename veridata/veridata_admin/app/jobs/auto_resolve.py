@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import logging
 from sqlalchemy import select
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import SyncConfig, ServiceConfig
 from app.integrations.chatwoot import ChatwootClient
 from app.core.logging import log_start, log_success, log_error, log_job, log_external_call

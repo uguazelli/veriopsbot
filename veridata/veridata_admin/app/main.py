@@ -84,8 +84,8 @@ async def sync_worker_loop():
 async def lifespan(app: FastAPI):
     # Create tables
     async with engine.begin() as conn:
-        from app.models import SQLModel
-        await conn.run_sync(SQLModel.metadata.create_all)
+        from app.models import Base
+        await conn.run_sync(Base.metadata.create_all)
 
         # MIGRATION: Ensure last_run_at exists (create_all doesn't alter existing tables)
         from sqlalchemy import text

@@ -1,7 +1,5 @@
-from typing import Optional
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy.orm import sessionmaker
+from typing import Optional, AsyncGenerator
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -21,11 +19,14 @@ class Settings(BaseSettings):
     @property
     def database_url_resolved(self) -> str:
         if self.DATABASE_URL:
+            # Ensure using asyncpg driver
+            if self.DATABASE_URL.startswith("postgresql://") and "asyncpg" not in self.DATABASE_URL:
+                return self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
             return self.DATABASE_URL
 
         # Construct from components if available
         if all([self.POSTGRES_USER, self.POSTGRES_HOST, self.POSTGRES_DB]):
-             return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT or 5432}/{self.POSTGRES_DB}"
+            return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT or 5432}/{self.POSTGRES_DB}"
 
         # Fallback/Error
         raise ValueError("DATABASE_URL or POSTGRES_* connection details required in environment.")
@@ -33,10 +34,9 @@ class Settings(BaseSettings):
 settings = Settings()
 
 engine = create_async_engine(settings.database_url_resolved, echo=False, future=True)
+async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
-async def get_session() -> AsyncSession:
-    async_session = sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
-    async with async_session() as session:
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    async with async_session_maker() as session:
         yield session
+
