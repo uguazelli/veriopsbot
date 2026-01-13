@@ -5,14 +5,13 @@ from fastapi.staticfiles import StaticFiles
 
 from src.controllers import web, api, ops
 from src.config.logging import setup_logging
-from src.storage.db import init_db, close_pool
+from src.storage.db import close_pool
 
 setup_logging()
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
     yield
     close_pool()
 

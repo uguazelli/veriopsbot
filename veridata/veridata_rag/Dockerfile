@@ -18,6 +18,8 @@ COPY --from=builder --chown=veridata:veridata /app/.venv /app/.venv
 
 # Copy source code with ownership
 COPY --chown=veridata:veridata src/ ./src/
+COPY --chown=veridata:veridata alembic.ini .
+COPY --chown=veridata:veridata migrations/ ./migrations/
 
 EXPOSE 8000
 
