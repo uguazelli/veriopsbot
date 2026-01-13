@@ -21,21 +21,7 @@ services:
 
     volumes:
       - .:/app
-    develop:
-      watch:
-        - action: sync
-          path: .
-          target: /app
-          ignore:
-            - .venv/
-            - __pycache__/
-            - .git/
-        - action: rebuild
-          path: pyproject.toml
-        - action: rebuild
-          path: uv.lock
-        - action: rebuild
-          path: Dockerfile
+
     networks:
       veridata.network:
         aliases:

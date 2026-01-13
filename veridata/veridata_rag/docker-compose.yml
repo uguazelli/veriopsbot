@@ -12,18 +12,12 @@ services:
       - "${API_PORT:-8000}:8000"
     volumes:
       - ./src:/app/src
-    command: ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
     networks:
       veridata.network:
         aliases:
           - veridata.rag
-    develop:
-      watch:
-        - action: sync
-          path: ./src
-          target: /app/src
-        - action: rebuild
-          path: ./pyproject.toml
+
 
 networks:
   veridata.network:

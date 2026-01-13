@@ -11,18 +11,12 @@ services:
     volumes:
       - ./app:/app/app
       - ./logs:/app/logs
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     networks:
       veridata.network:
         aliases:
           - veridata.admin
-    develop:
-      watch:
-        - action: sync
-          path: ./app
-          target: /app/app
-        - action: rebuild
-          path: ./pyproject.toml
+
 
 networks:
   veridata.network:
