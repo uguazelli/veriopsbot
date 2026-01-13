@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
 
 WORKDIR /app
 
@@ -12,7 +12,7 @@ COPY uv.lock .
 # Install dependencies
 RUN uv sync --frozen --no-install-project
 
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+FROM python:3.13-slim-bookworm
 
 WORKDIR /app
 
