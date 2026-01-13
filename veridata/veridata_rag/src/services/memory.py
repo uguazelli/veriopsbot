@@ -1,82 +1,80 @@
 import logging
 from uuid import UUID
 from typing import List, Dict, Any, Optional
-from src.storage.db import get_db
+from sqlalchemy import select, delete
+from src.storage.engine import get_session
+from src.models import ChatSession, ChatMessage
 
 logger = logging.getLogger(__name__)
 
-def create_session(tenant_id: UUID) -> str:
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO chat_sessions (tenant_id) VALUES (%s) RETURNING id",
-                (tenant_id,)
-            )
-            session_id = cur.fetchone()[0]
-            conn.commit()
-            return str(session_id)
+async def create_session(tenant_id: UUID) -> str:
+    async for session in get_session():
+        try:
+            new_session = ChatSession(tenant_id=tenant_id)
+            session.add(new_session)
+            await session.commit()
+            await session.refresh(new_session)
+            return str(new_session.id)
+        except Exception as e:
+            logger.error(f"Failed to create session: {e}")
+            raise
 
-def get_session(session_id: UUID) -> Optional[Dict[str, Any]]:
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, tenant_id FROM chat_sessions WHERE id = %s", (session_id,))
-            row = cur.fetchone()
-            if row:
-                return {"id": str(row[0]), "tenant_id": str(row[1])}
-            return None
+async def get_session_data(session_id: UUID) -> Optional[Dict[str, Any]]:
+    async for session in get_session():
+        result = await session.execute(select(ChatSession).where(ChatSession.id == session_id))
+        chat_session = result.scalars().first()
+        if chat_session:
+            return {"id": str(chat_session.id), "tenant_id": str(chat_session.tenant_id)}
+        return None
 
-def add_message(session_id: UUID, role: str, content: str):
+async def add_message(session_id: UUID, role: str, content: str):
     if role not in ('user', 'ai'):
         raise ValueError("Role must be 'user' or 'ai'")
 
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO chat_messages (session_id, role, content)
-                VALUES (%s, %s, %s)
-                """,
-                (session_id, role, content)
-            )
-            conn.commit()
+    async for session in get_session():
+        try:
+            msg = ChatMessage(session_id=session_id, role=role, content=content)
+            session.add(msg)
+            await session.commit()
+        except Exception as e:
+            logger.error(f"Failed to add message: {e}")
+            raise
 
-def get_chat_history(session_id: UUID, limit: int = 10) -> List[Dict[str, str]]:
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT role, content
-                FROM chat_messages
-                WHERE session_id = %s
-                ORDER BY created_at DESC
-                LIMIT %s
-                """,
-                (session_id, limit)
-            )
-            rows = cur.fetchall()
+async def get_chat_history(session_id: UUID, limit: int = 10) -> List[Dict[str, str]]:
+    async for session in get_session():
+        stmt = (
+            select(ChatMessage)
+            .where(ChatMessage.session_id == session_id)
+            .order_by(ChatMessage.created_at.desc())
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+        # rows are in DESC order (newest first). We reverse to get chronological order.
+        history = [{"role": msg.role, "content": msg.content} for msg in rows]
+        return history[::-1]
 
-            history = [{"role": row[0], "content": row[1]} for row in rows]
-            return history[::-1]
+async def get_full_chat_history(session_id: UUID) -> List[Dict[str, str]]:
+    async for session in get_session():
+        stmt = (
+            select(ChatMessage)
+            .where(ChatMessage.session_id == session_id)
+            .order_by(ChatMessage.created_at.asc())
+        )
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+        return [{"role": msg.role, "content": msg.content, "created_at": msg.created_at.isoformat()} for msg in rows]
 
-def get_full_chat_history(session_id: UUID) -> List[Dict[str, str]]:
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT role, content, created_at
-                FROM chat_messages
-                WHERE session_id = %s
-                ORDER BY created_at ASC
-                """,
-                (session_id,)
-            )
-            rows = cur.fetchall()
-            return [{"role": row[0], "content": row[1], "created_at": row[2].isoformat()} for row in rows]
-
-def delete_session(session_id: UUID):
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM chat_messages WHERE session_id = %s", (session_id,))
-            cur.execute("DELETE FROM chat_sessions WHERE id = %s", (session_id,))
-            conn.commit()
+async def delete_session(session_id: UUID):
+    async for session in get_session():
+        try:
+            # Cascading delete is handled by database, but we can be explicit if needed.
+            # ORM cascade is safer.
+            # But here we just delete the session, FK cascade carries the messages.
+            stmt = delete(ChatSession).where(ChatSession.id == session_id)
+            await session.execute(stmt)
+            await session.commit()
             logger.info(f"Deleted session {session_id} and its history.")
+        except Exception as e:
+            logger.error(f"Failed to delete session {session_id}: {e}")
+            raise

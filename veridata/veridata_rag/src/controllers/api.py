@@ -1,6 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, Form
 from uuid import UUID
-from src.storage.db import get_db, close_pool
 from src.services.rag import generate_answer
 from src.services.vlm import describe_image
 from src.models.schemas import QueryRequest, QueryResponse, ChatMessage, ChatHistoryResponse
@@ -16,7 +15,7 @@ router = APIRouter()
 # ==================================================================================
 @router.delete("/session/{session_id}")
 async def api_delete_session(session_id: UUID):
-    delete_session(session_id)
+    await delete_session(session_id)
     return {"status": "deleted", "session_id": session_id}
 
 
@@ -28,7 +27,7 @@ async def api_delete_session(session_id: UUID):
 # ==================================================================================
 @router.get("/session/{session_id}/history", response_model=ChatHistoryResponse)
 async def api_get_history(session_id: UUID):
-    history = get_full_chat_history(session_id)
+    history = await get_full_chat_history(session_id)
     return {"messages": history}
 
 
@@ -42,10 +41,10 @@ async def api_get_history(session_id: UUID):
 async def api_query_rag(request: QueryRequest):
     session_id = request.session_id
     if not session_id:
-        session_id_str = create_session(request.tenant_id)
+        session_id_str = await create_session(request.tenant_id)
         session_id = UUID(session_id_str)
 
-    answer, requires_human = generate_answer(
+    answer, requires_human = await generate_answer(
         request.tenant_id,
         request.query,
         use_hyde=request.use_hyde,

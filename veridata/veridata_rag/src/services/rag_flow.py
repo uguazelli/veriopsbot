@@ -63,7 +63,7 @@ def contextualize_query(query: str, history: List[Dict[str, str]], provider: str
 # 3. Search: Hybrid (Keyword + Semantic) search via Postgres.
 # 4. Rerank (Optional): Use a cross-encoder to re-score results.
 # ==================================================================================
-def search_documents(
+async def search_documents(
     tenant_id: UUID,
     query: str,
     limit: int = 5,
@@ -90,7 +90,7 @@ def search_documents(
 
     logger.info(f"🔍 Opt 2 (Accuracy): Performing Hybrid Search (Vector + FTS) with RRF (Limit: {candidate_limit})")
 
-    results = search_documents_hybrid(tenant_id, query_embedding, query, candidate_limit)
+    results = await search_documents_hybrid(tenant_id, query_embedding, query, candidate_limit)
 
     # 4. Reranking
     if use_rerank and results:
@@ -109,15 +109,15 @@ def resolve_config(use_hyde: Optional[bool], use_rerank: Optional[bool]) -> tupl
         use_rerank = get_global_setting("use_rerank", False)
     return use_hyde, use_rerank
 
-def get_language_instruction(tenant_id: UUID) -> str:
-    pref_langs = get_tenant_languages(tenant_id)
+async def get_language_instruction(tenant_id: UUID) -> str:
+    pref_langs = await get_tenant_languages(tenant_id)
     lang_instruction = ""
     if pref_langs:
         lang_instruction = f"Preferred Languages: {pref_langs}\n(Prioritize these if the user's language is ambiguous, but always match the user's input language)."
     logger.info(f"Tenant Preferences [{tenant_id}]: '{pref_langs}'")
     return lang_instruction
 
-def prepare_query_context(
+async def prepare_query_context(
     session_id: Optional[UUID],
     query: str,
     provider: Optional[str]
@@ -125,7 +125,7 @@ def prepare_query_context(
     search_query = query
     history = []
     if session_id:
-        history = get_chat_history(session_id, limit=5)
+        history = await get_chat_history(session_id, limit=5)
         if history:
             search_query = contextualize_query(query, history, provider)
     return search_query, history
@@ -162,7 +162,7 @@ def determine_intent(complexity_score: int, pricing_intent: bool) -> tuple[bool,
 # 1. Live Data (Google Sheets/External API - passed as external_context)
 # 2. Vector Store (search_documents)
 # ==================================================================================
-def retrieve_context(
+async def retrieve_context(
     tenant_id: UUID,
     search_query: str,
     external_context: Optional[str],
@@ -181,7 +181,7 @@ def retrieve_context(
 
     # 2. Database (RAG) Data
     doc_context = ""
-    results = search_documents(
+    results = await search_documents(
         tenant_id,
         search_query,
         use_hyde=use_hyde,
@@ -218,10 +218,10 @@ def generate_llm_response(
         log_error(logger, f"LLM generation failed: {e}")
         return "Sorry, I encountered an error generating the answer."
 
-def save_interaction(session_id: Optional[UUID], query: str, answer: str):
+async def save_interaction(session_id: Optional[UUID], query: str, answer: str):
     if session_id:
         try:
-            add_message(session_id, "user", query)
-            add_message(session_id, "ai", answer)
+            await add_message(session_id, "user", query)
+            await add_message(session_id, "ai", answer)
         except Exception as e:
             logger.error(f"Failed to save message history: {e}")

@@ -6,7 +6,9 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Request, Depends, UploadFile, File, Form, BackgroundTasks, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from src.storage.db import get_db
+from sqlalchemy import select, delete, update, func, text
+from src.storage.engine import get_session
+from src.models import Tenant, Document
 from src.utils.auth import require_auth
 from src.services.rag import ingest_document, generate_answer
 
@@ -14,23 +16,25 @@ logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="src/templates")
 router = APIRouter()
 
-def get_tenants():
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, name FROM tenants ORDER BY created_at DESC")
-            return cur.fetchall()
+async def get_tenants():
+    async for session in get_session():
+        result = await session.execute(select(Tenant.id, Tenant.name).order_by(Tenant.created_at.desc()))
+        return result.all()
 
-def get_tenant_documents(tenant_id: UUID):
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT filename, MAX(created_at) as created_at, COUNT(*) as chunk_count
-                FROM documents
-                WHERE tenant_id = %s
-                GROUP BY filename
-                ORDER BY created_at DESC
-            """, (tenant_id,))
-            return cur.fetchall()
+async def get_tenant_documents(tenant_id: UUID):
+    async for session in get_session():
+        stmt = (
+            select(
+                Document.filename,
+                func.max(Document.created_at).label("created_at"),
+                func.count().label("chunk_count")
+            )
+            .where(Document.tenant_id == tenant_id)
+            .group_by(Document.filename)
+            .order_by(func.max(Document.created_at).desc())
+        )
+        result = await session.execute(stmt)
+        return result.all()
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
@@ -57,7 +61,7 @@ async def logout(request: Request):
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, username: str = Depends(require_auth)):
-    tenants = get_tenants()
+    tenants = await get_tenants()
     return templates.TemplateResponse(
         "index.html",
         {"request": request, "tenants": tenants, "selected_tenant": None, "username": username}
@@ -65,26 +69,25 @@ async def dashboard(request: Request, username: str = Depends(require_auth)):
 
 @router.post("/tenants", response_class=HTMLResponse)
 async def create_tenant(request: Request, name: Annotated[str, Form()], username: str = Depends(require_auth)):
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("INSERT INTO tenants (name) VALUES (%s) RETURNING id", (name,))
-            conn.commit()
+    async for session in get_session():
+        tenant = Tenant(name=name)
+        session.add(tenant)
+        await session.commit()
     return RedirectResponse(url="/", status_code=303)
 
 @router.get("/tenants/{tenant_id}", response_class=HTMLResponse)
 async def view_tenant(request: Request, tenant_id: UUID, username: str = Depends(require_auth)):
-    tenants = get_tenants()
-    documents = get_tenant_documents(tenant_id)
+    tenants = await get_tenants()
+    documents = await get_tenant_documents(tenant_id)
 
     tenant_data = {"id": str(tenant_id), "name": "Unknown", "preferred_languages": ""}
 
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT name, preferred_languages FROM tenants WHERE id = %s", (tenant_id,))
-            res = cur.fetchone()
-            if res:
-                tenant_data["name"] = res[0]
-                tenant_data["preferred_languages"] = res[1] or ""
+    async for session in get_session():
+        result = await session.execute(select(Tenant).where(Tenant.id == tenant_id))
+        tenant = result.scalars().first()
+        if tenant:
+            tenant_data["name"] = tenant.name
+            tenant_data["preferred_languages"] = tenant.preferred_languages or ""
 
     return templates.TemplateResponse(
         "index.html",
@@ -104,13 +107,10 @@ async def update_tenant_settings(
     preferred_languages: Annotated[str, Form()],
     username: str = Depends(require_auth)
 ):
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE tenants SET preferred_languages = %s WHERE id = %s",
-                (preferred_languages, tenant_id)
-            )
-            conn.commit()
+    async for session in get_session():
+        stmt = update(Tenant).where(Tenant.id == tenant_id).values(preferred_languages=preferred_languages)
+        await session.execute(stmt)
+        await session.commit()
 
     return RedirectResponse(url=f"/tenants/{tenant_id}", status_code=303)
 
@@ -157,9 +157,9 @@ async def query_rag(
     username: str = Depends(require_auth)
 ):
     if not session_id:
-        session_id = create_session(tenant_id)
+        session_id = await create_session(tenant_id)
 
-    answer = generate_answer(
+    answer, requires_human = await generate_answer(
         tenant_id,
         query,
         use_hyde=use_hyde,
@@ -174,17 +174,17 @@ async def query_rag(
 
 @router.delete("/tenants/{tenant_id}/documents", response_class=HTMLResponse)
 async def delete_document(request: Request, tenant_id: UUID, filename: str, username: str = Depends(require_auth)):
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM documents WHERE tenant_id = %s AND filename = %s", (tenant_id, filename))
-            conn.commit()
+    async for session in get_session():
+        stmt = delete(Document).where(Document.tenant_id == tenant_id, Document.filename == filename)
+        await session.execute(stmt)
+        await session.commit()
     return HTMLResponse("")
 
 @router.delete("/tenants/{tenant_id}", response_class=HTMLResponse)
 async def delete_tenant(request: Request, tenant_id: UUID, username: str = Depends(require_auth)):
-    with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM tenants WHERE id = %s", (tenant_id,))
-            conn.commit()
+    async for session in get_session():
+        stmt = delete(Tenant).where(Tenant.id == tenant_id)
+        await session.execute(stmt)
+        await session.commit()
     # HX-Redirect tells HTMX to navigate the client to the new URL
     return HTMLResponse("", headers={"HX-Redirect": "/"})

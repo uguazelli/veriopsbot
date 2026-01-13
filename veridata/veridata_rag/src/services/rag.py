@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # 4. Embedding: Convert chunks to vectors using Gemini.
 # 5. Storage: Insert text + vectors into Postgres (via Repository).
 # ==================================================================================
-def ingest_document(tenant_id: UUID, filename: str, content: str = None, file_bytes: bytes = None):
+async def ingest_document(tenant_id: UUID, filename: str, content: str = None, file_bytes: bytes = None):
     logger.info(f"Ingesting document {filename} for tenant {tenant_id}")
 
     is_image = filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))
@@ -79,7 +79,7 @@ def ingest_document(tenant_id: UUID, filename: str, content: str = None, file_by
 
     # 4. Insert into DB (Delegated to Repository)
     for node, embedding in zip(nodes, embeddings):
-        success = insert_document_chunk(tenant_id, filename, node.get_content(), embedding)
+        success = await insert_document_chunk(tenant_id, filename, node.get_content(), embedding)
         if not success:
             logger.error(f"Failed to insert chunk for {filename}")
 
@@ -96,7 +96,7 @@ def ingest_document(tenant_id: UUID, filename: str, content: str = None, file_by
 # 5. Generate: Feed Context + Query to LLM.
 # 6. Save: Persist the conversation.
 # ==================================================================================
-def generate_answer(
+async def generate_answer(
     tenant_id: UUID,
     query: str,
     use_hyde: Optional[bool] = None,
@@ -112,10 +112,10 @@ def generate_answer(
 
     # 1. Config
     use_hyde, use_rerank = resolve_config(use_hyde, use_rerank)
-    lang_instruction = get_language_instruction(tenant_id)
+    lang_instruction = await get_language_instruction(tenant_id)
 
     # 2. Contextualization
-    search_query, history = prepare_query_context(session_id, query, provider)
+    search_query, history = await prepare_query_context(session_id, query, provider)
     history_str = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in history]) if history else ""
 
     # 3. Intent & Routing
@@ -125,7 +125,7 @@ def generate_answer(
     answer = ""
     if requires_rag:
         # Retrieve docs & Generate Answer
-        context_str, final_lang_instruction = retrieve_context(
+        context_str, final_lang_instruction = await retrieve_context(
             tenant_id, search_query, external_context, use_hyde, use_rerank, provider, lang_instruction
         )
         answer = generate_llm_response(
@@ -154,7 +154,8 @@ def generate_answer(
         )
 
     # 5. Persistence
-    save_interaction(session_id, query, answer)
+    await save_interaction(session_id, query, answer)
 
     # Return (Answer, Requires Human Handover - unused for now defaults to False)
     return answer, False
+
