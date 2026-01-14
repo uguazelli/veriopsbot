@@ -50,6 +50,32 @@ If this is a greeting, introduce yourself as Veribot 🤖, an AI assistant who c
 IMPORTANT: Always answer in the same language as the user's message.
 """
 
+GRADER_SYSTEM_PROMPT = """You are a strict teacher grading a quiz.
+You will be given:
+1. A QUESTION
+2. A FACT (Context)
+3. A STUDENT ANSWER
+
+Grade the STUDENT ANSWER based on the FACT and QUESTION.
+- If the answer is "I don't know" or "I cannot answer" -> Score: 0
+- If the answer is unrelated to the question -> Score: 0
+- If the answer is hallucinated (not based on FACT) -> Score: 0
+- If the answer is correct/useful -> Score: 1
+
+Return JSON:
+{
+    "score": 0 or 1,
+    "reason": "explanation"
+}
+"""
+
+REWRITE_SYSTEM_PROMPT = """You are a helpful assistant that optimizes search queries.
+The user asked a question, but the previous search yielded bad results.
+Look at the original question and the reason for failure.
+Write a BETTER, more specific search query to find the answer.
+Output ONLY the new query string.
+"""
+
 
 async def router_node(state: AgentState):
     last_msg = state["messages"][-1].content
@@ -98,6 +124,75 @@ async def human_handoff_node(state: AgentState):
             )
         ],
         "requires_human": True,
+    }
+
+
+async def grader_node(state: AgentState):
+    """Grades the RAG response for relevance/hallucinations."""
+    last_msg = state["messages"][-1].content  # The RAG Answer
+    # We need the User Question. It's usually the second to last, OR the last "HumanMessage"
+    # To be safe, let's find the last HumanMessage
+    user_question = "Unknown"
+    for msg in reversed(state["messages"][:-1]):
+        if isinstance(msg, HumanMessage):
+            user_question = msg.content
+            break
+
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.0-flash",
+        temperature=0,
+        google_api_key=settings.google_api_key,
+    )
+
+    messages = [
+        SystemMessage(content=GRADER_SYSTEM_PROMPT),
+        HumanMessage(content=f"QUESTION: {user_question}\nSTUDENT ANSWER: {last_msg}"),
+    ]
+
+    try:
+        response = await llm.ainvoke(messages)
+        content = response.content.replace("```json", "").replace("```", "").strip()
+        data = json.loads(content)
+        score = data.get("score", 1)
+        reason = data.get("reason", "No reason provided")
+    except Exception as e:
+        logger.error(f"Grader failed: {e}")
+        score = 1  # Fallback to accepting it manually
+        reason = "Grader Error"
+
+    return {"grading_reason": f"SCORE: {score} | {reason}"}
+
+
+async def rewrite_node(state: AgentState):
+    """Rewrites the query to attempt a better RAG search."""
+    user_question = state["messages"][-2].content  # Assuming User -> AI (bad).
+    # Actually, the messages list grows.
+    # [User, AI (bad)]
+    grading_reason = state.get("grading_reason", "")
+
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.0-flash",
+        temperature=0,
+        google_api_key=settings.google_api_key,
+    )
+
+    messages = [
+        SystemMessage(content=REWRITE_SYSTEM_PROMPT),
+        HumanMessage(content=f"ORIGINAL: {user_question}\nFAILURE REASON: {grading_reason}"),
+    ]
+
+    response = await llm.ainvoke(messages)
+    new_query = response.content.strip()
+
+    logger.info(f"🔄 Query Rewritten: '{user_question}' -> '{new_query}'")
+
+    # We need to replace the last Human Message with this new query?
+    # Or just append it?
+    # If we append, the history grows: User, AI(bad), User(Rewritten).
+    # Then RAG runs again. This is standard loop behavior.
+    return {
+        "messages": [HumanMessage(content=new_query)],
+        "retry_count": state.get("retry_count", 0) + 1,
     }
 
 

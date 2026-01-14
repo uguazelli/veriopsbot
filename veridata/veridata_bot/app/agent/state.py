@@ -14,3 +14,5 @@ class AgentState(TypedDict):
     complexity_score: int
     pricing_intent: bool
     google_sheets_url: str
+    retry_count: int
+    grading_reason: str

@@ -1,6 +1,6 @@
 from langgraph.graph import END, START, StateGraph
 
-from app.agent.nodes import human_handoff_node, rag_node, router_node
+from app.agent.nodes import grader_node, human_handoff_node, rag_node, rewrite_node, router_node
 from app.agent.state import AgentState
 
 
@@ -19,6 +19,26 @@ def route_decision(state: AgentState):
     else:
         # Defaults to RAG (even for small talk, which is RAG with complexity=1)
         return "rag"
+
+
+def grade_decision(state: AgentState):
+    """Decides whether to accept the RAG answer or retry."""
+    grading_reason = state.get("grading_reason", "")
+    retry_count = state.get("retry_count", 0)
+
+    # Parse Score
+    if "SCORE: 1" in grading_reason:
+        return "end"
+
+    # It's SCORE: 0 (Bad)
+    if retry_count < 2:  # Allow 2 retries
+        return "rewrite"
+    else:
+        # Too many retries, give up (or handoff)
+        # For now, let's just end (sending the "I don't know" or bad answer)
+        # OR better, route to handoff?
+        # Let's route to handoff to be helpful.
+        return "human_handoff"
 
 
 # ==================================================================================
@@ -40,6 +60,12 @@ def build_graph():
     # 'rag': The main workhorse. Calls vector DB to answer questions.
     workflow.add_node("rag", rag_node)
 
+    # 'grader': Evals the RAG output
+    workflow.add_node("grader", grader_node)
+
+    # 'rewrite': Optimizes the query
+    workflow.add_node("rewrite", rewrite_node)
+
     # ------------------------------------------------------------------
     # 2. DEFINES EDGES (The Connections)
     # ------------------------------------------------------------------
@@ -49,12 +75,29 @@ def build_graph():
     # Router -> (Conditional) -> Handoff OR RAG
     workflow.add_conditional_edges("router", route_decision, {"human_handoff": "human_handoff", "rag": "rag"})
 
+    # RAG -> Grader (Always grade RAG output)
+    workflow.add_edge("rag", "grader")
+
+    # Grader -> (Conditional) -> Rewrite OR Handoff OR End
+    workflow.add_conditional_edges(
+        "grader",
+        grade_decision,
+        {
+            "rewrite": "rewrite",
+            "human_handoff": "human_handoff",
+            "end": END,
+        },
+    )
+
+    # Rewrite -> RAG (Loop back)
+    workflow.add_edge("rewrite", "rag")
+
     # ------------------------------------------------------------------
     # 3. DEFINE EXITS
     # ------------------------------------------------------------------
-    # Both paths lead to the End (Exit)
+    # Handoff leads to End
     workflow.add_edge("human_handoff", END)
-    workflow.add_edge("rag", END)
+    # RAG no longer goes to END directly, it goes to Grader
 
     return workflow.compile()
 
