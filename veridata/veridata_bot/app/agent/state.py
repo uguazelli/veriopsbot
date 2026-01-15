@@ -16,3 +16,4 @@ class AgentState(TypedDict):
     google_sheets_url: str
     retry_count: int
     grading_reason: str
+    client_slug: str

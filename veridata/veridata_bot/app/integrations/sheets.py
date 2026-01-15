@@ -29,10 +29,17 @@ async def fetch_google_sheet_data(url: str) -> str:
                 name = row.get("Product Name") or row.get("item_name")
                 price = row.get("Price") or row.get("item_price")
                 sku = row.get("ID / SKU") or row.get("item_id")
-                notes = row.get("AI Notes (Hidden Rules)") or row.get("context") or ""
+                item_desc = row.get("Description (AI Context)") or row.get("item_desc") or ""
+                ai_notes = row.get("AI Notes (Hidden Rules)") or row.get("context") or ""
+
+                # Combine description and hidden rules
+                full_context = []
+                if item_desc: full_context.append(f"Desc: {item_desc}")
+                if ai_notes: full_context.append(f"Rules: {ai_notes}")
+                context_str = " | ".join(full_context)
 
                 if name:
-                    items.append(f"* {name} ({sku}): {price} | Context: {notes}")
+                    items.append(f"* {name} ({sku}): {price} | {context_str}")
 
             logger.info(f"📋 Sheet processing complete. Rows processed: {rows_processed}, Items found: {len(items)}")
 

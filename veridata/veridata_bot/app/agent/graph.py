@@ -1,6 +1,6 @@
 from langgraph.graph import END, START, StateGraph
 
-from app.agent.nodes import grader_node, human_handoff_node, rag_node, rewrite_node, router_node
+from app.agent.nodes import grader_node, human_handoff_node, rag_node, rewrite_node, router_node, calendar_node, small_talk_node, pricing_node
 from app.agent.state import AgentState
 
 
@@ -16,6 +16,12 @@ def route_decision(state: AgentState):
     if intent == "human":
         # If user wants a human, go to Handoff Node
         return "human_handoff"
+    elif intent == "calendar":
+        return "calendar"
+    elif intent == "small_talk":
+        return "small_talk"
+    elif intent == "pricing" or state.get("pricing_intent"):
+        return "pricing"
     else:
         # Defaults to RAG (even for small talk, which is RAG with complexity=1)
         return "rag"
@@ -66,14 +72,30 @@ def build_graph():
     # 'rewrite': Optimizes the query
     workflow.add_node("rewrite", rewrite_node)
 
+    # 'calendar': Handles booking/availability
+    workflow.add_node("calendar", calendar_node)
+
+    # 'small_talk': Handles greetings
+    workflow.add_node("small_talk", small_talk_node)
+
+    # 'pricing': Handles product/price queries
+    workflow.add_node("pricing", pricing_node)
+
     # ------------------------------------------------------------------
     # 2. DEFINES EDGES (The Connections)
     # ------------------------------------------------------------------
     # Start -> Router
     workflow.add_edge(START, "router")
 
-    # Router -> (Conditional) -> Handoff OR RAG
-    workflow.add_conditional_edges("router", route_decision, {"human_handoff": "human_handoff", "rag": "rag"})
+    # Router -> (Conditional) -> Handoff OR RAG OR Calendar OR Small Talk
+    workflow.add_conditional_edges("router", route_decision, {
+        "human_handoff": "human_handoff",
+        "rag": "rag",
+        "calendar": "calendar",
+        "calendar": "calendar",
+        "small_talk": "small_talk",
+        "pricing": "pricing"
+    })
 
     # RAG -> Grader (Always grade RAG output)
     workflow.add_edge("rag", "grader")
@@ -97,6 +119,10 @@ def build_graph():
     # ------------------------------------------------------------------
     # Handoff leads to End
     workflow.add_edge("human_handoff", END)
+    workflow.add_edge("calendar", END)
+    workflow.add_edge("calendar", END)
+    workflow.add_edge("small_talk", END)
+    workflow.add_edge("pricing", END)
     # RAG no longer goes to END directly, it goes to Grader
 
     return workflow.compile()
