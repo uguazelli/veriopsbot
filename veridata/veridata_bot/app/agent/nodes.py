@@ -19,7 +19,9 @@ from app.agent.prompts import (
     SMALL_TALK_SYSTEM_PROMPT,
     GRADER_SYSTEM_PROMPT,
     REWRITE_SYSTEM_PROMPT,
+    REWRITE_SYSTEM_PROMPT,
     PRICING_SYSTEM_PROMPT,
+    LEAD_CAPTURE_SYSTEM_PROMPT,
 )
 from app.integrations.sheets import fetch_google_sheet_data
 
@@ -58,7 +60,94 @@ async def pricing_node(state: AgentState):
         return {"messages": [AIMessage(content=response.content)]}
     except Exception as e:
         logger.error(f"Pricing Node LLM failed: {e}")
+        logger.error(f"Pricing Node LLM failed: {e}")
         return {"messages": [AIMessage(content="I'm having trouble checking the price list right now.")]}
+
+
+async def lead_node(state: AgentState):
+    """Handles lead qualification and capture."""
+    last_msg = state["messages"][-1].content
+    sender_name = state.get("sender_name", "")
+    sender_email = state.get("sender_email", "")
+    sender_phone = state.get("sender_phone", "")
+
+    # Inject Context into Prompt
+    prompt = LEAD_CAPTURE_SYSTEM_PROMPT.format(
+        existing_name=sender_name,
+        existing_email=sender_email,
+        existing_phone=sender_phone
+    )
+
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.0-flash",
+        temperature=0,
+        google_api_key=settings.google_api_key,
+        convert_system_message_to_human=True,
+    )
+
+    messages = [
+        SystemMessage(content=prompt),
+        HumanMessage(content=last_msg)
+    ]
+
+    try:
+        response = await llm.ainvoke(messages)
+        content = response.content.replace("```json", "").replace("```", "").strip()
+        data = json.loads(content)
+
+        # Logic: If Qualified -> Sync
+        if data.get("qualified"):
+            # 3. CRM Sync Logic (Extracted from actions.py pattern)
+            client_slug = state.get("client_slug")
+            if client_slug:
+                try:
+                     async with async_session_maker() as session:
+                        from app.models.client import Client
+                        # Fetch Configs
+                        stmt = select(ServiceConfig).join(Client).where(Client.slug == client_slug)
+                        result = await session.execute(stmt)
+                        service_config = result.scalars().first()
+                        configs = service_config.config if service_config else {}
+
+                        # Initialize CRMs
+                        from app.integrations.espocrm import EspoClient
+                        from app.integrations.hubspot import HubSpotClient
+
+                        crms = []
+                        espo_conf = configs.get("espocrm")
+                        if espo_conf:
+                            crms.append(EspoClient(base_url=espo_conf["base_url"], api_key=espo_conf["api_key"]))
+
+                        hub_conf = configs.get("hubspot")
+                        if hub_conf:
+                            token = hub_conf.get("access_token") or hub_conf.get("api_key")
+                            if token:
+                                crms.append(HubSpotClient(access_token=token))
+
+                        # Execute Sync
+                        if crms:
+                            logger.info(f"🚀 Syncing Lead to {len(crms)} CRMs...")
+                            name = data.get("extracted_name", sender_name)
+                            email = data.get("extracted_email", sender_email)
+                            phone = data.get("extracted_phone", sender_phone)
+
+                            for crm in crms:
+                                try:
+                                    await crm.sync_lead(name=name, email=email, phone_number=phone)
+                                    logger.info(f"✅ Lead synced to {crm.__class__.__name__}")
+                                except Exception as crm_err:
+                                    logger.error(f"❌ Lead sync failed for {crm.__class__.__name__}: {crm_err}")
+                except Exception as sync_err:
+                    logger.error(f"Lead Node Sync Error: {sync_err}")
+
+        return {"messages": [AIMessage(content=data.get("response_message"))]}
+
+    except Exception as e:
+        logger.error(f"Lead Node failed: {e}")
+        return {
+            "messages": [AIMessage(content="I'm having a bit of trouble connecting to my lead system. I'll pass you to a human agent to help you out!")],
+            "requires_human": True
+        }
 
 
 
@@ -84,18 +173,21 @@ async def router_node(state: AgentState):
         intent = "rag"
         complexity = data.get("complexity_score", 5)
         pricing = data.get("pricing_intent", False)
+        lead = data.get("lead_intent", False)
 
         if data.get("requires_human"):
             intent = "human"
         elif data.get("booking_intent"):
             intent = "calendar"
+        elif lead:
+            intent = "lead"
         elif not data.get("requires_rag"):
             intent = "small_talk"
             complexity = 1
             pricing = False
 
         logger.info(
-            f"Router Decision: {intent} (Reason: {data.get('reason')}) | Complexity: {complexity} | Pricing: {pricing}"
+            f"Router Decision: {intent} (Reason: {data.get('reason')}) | Complexity: {complexity} | Pricing: {pricing} | Lead: {lead}"
         )
 
         return {"intent": intent, "complexity_score": complexity, "pricing_intent": pricing}

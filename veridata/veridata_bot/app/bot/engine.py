@@ -245,6 +245,9 @@ async def process_bot_event(client_slug: str, payload_dict: dict, db: AsyncSessi
         "session_id": str(session.rag_session_id) if session.rag_session_id else None,
         "google_sheets_url": rag_config.get("google_sheets_url"),
         "client_slug": client_slug,
+        "sender_name": event.sender.name if event.sender else "",
+        "sender_email": event.sender.email if event.sender else "",
+        "sender_phone": event.sender.phone_number if event.sender else "",
     }
 
     logger.info(f"DEBUG: Graph Input Messages: {[m.content for m in full_messages]}")

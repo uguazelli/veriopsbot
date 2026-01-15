@@ -17,3 +17,6 @@ class AgentState(TypedDict):
     retry_count: int
     grading_reason: str
     client_slug: str
+    sender_name: str
+    sender_phone: str
+    sender_email: str
