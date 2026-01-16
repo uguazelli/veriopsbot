@@ -19,11 +19,8 @@ from app.agent.prompts import (
     SMALL_TALK_SYSTEM_PROMPT,
     GRADER_SYSTEM_PROMPT,
     REWRITE_SYSTEM_PROMPT,
-    REWRITE_SYSTEM_PROMPT,
     PRICING_SYSTEM_PROMPT,
-    LEAD_CAPTURE_SYSTEM_PROMPT,
     HANDOFF_SYSTEM_PROMPT,
-    CALENDAR_RESPONSE_SYSTEM_PROMPT,
 )
 from app.models.client import Client
 from app.integrations.crm.espocrm import EspoClient
@@ -69,87 +66,7 @@ async def pricing_node(state: AgentState):
         return {"messages": [AIMessage(content="I'm having trouble checking the price list right now.")]}
 
 
-async def lead_node(state: AgentState):
-    """Handles lead qualification and capture."""
-    last_msg = state["messages"][-1].content
-    sender_name = state.get("sender_name", "")
-    sender_email = state.get("sender_email", "")
-    sender_phone = state.get("sender_phone", "")
 
-    # Inject Context into Prompt
-    prompt = LEAD_CAPTURE_SYSTEM_PROMPT.format(
-        existing_name=sender_name,
-        existing_email=sender_email,
-        existing_phone=sender_phone
-    )
-
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        temperature=0,
-        google_api_key=settings.google_api_key,
-        convert_system_message_to_human=True,
-    )
-
-    messages = [
-        SystemMessage(content=prompt),
-        HumanMessage(content=last_msg)
-    ]
-
-    try:
-        response = await llm.ainvoke(messages)
-        content = response.content.replace("```json", "").replace("```", "").strip()
-        data = json.loads(content)
-
-        # Logic: If Qualified -> Sync
-        if data.get("qualified"):
-            # 3. CRM Sync Logic (Extracted from actions.py pattern)
-            client_slug = state.get("client_slug")
-            if client_slug:
-                try:
-                     async with async_session_maker() as session:
-                        # Fetch Configs
-                        stmt = select(ServiceConfig).join(Client).where(Client.slug == client_slug)
-                        result = await session.execute(stmt)
-                        service_config = result.scalars().first()
-                        configs = service_config.config if service_config else {}
-
-                        # Initialize CRMs
-
-                        crms = []
-                        espo_conf = configs.get("espocrm")
-                        if espo_conf:
-                            crms.append(EspoClient(base_url=espo_conf["base_url"], api_key=espo_conf["api_key"]))
-
-                        hub_conf = configs.get("hubspot")
-                        if hub_conf:
-                            token = hub_conf.get("access_token") or hub_conf.get("api_key")
-                            if token:
-                                crms.append(HubSpotClient(access_token=token))
-
-                        # Execute Sync
-                        if crms:
-                            logger.info(f"🚀 Syncing Lead to {len(crms)} CRMs...")
-                            name = data.get("extracted_name", sender_name)
-                            email = data.get("extracted_email", sender_email)
-                            phone = data.get("extracted_phone", sender_phone)
-
-                            for crm in crms:
-                                try:
-                                    await crm.sync_lead(name=name, email=email, phone_number=phone)
-                                    logger.info(f"✅ Lead synced to {crm.__class__.__name__}")
-                                except Exception as crm_err:
-                                    logger.error(f"❌ Lead sync failed for {crm.__class__.__name__}: {crm_err}")
-                except Exception as sync_err:
-                    logger.error(f"Lead Node Sync Error: {sync_err}")
-
-        return {"messages": [AIMessage(content=data.get("response_message"))]}
-
-    except Exception as e:
-        logger.error(f"Lead Node failed: {e}")
-        return {
-            "messages": [AIMessage(content="I'm having a bit of trouble connecting to my lead system. I'll pass you to a human agent to help you out!")],
-            "requires_human": True
-        }
 
 
 
@@ -187,22 +104,17 @@ async def router_node(state: AgentState):
         intent = "rag"
         complexity = data.get("complexity_score", 5)
         pricing = data.get("pricing_intent", False)
-        lead = data.get("lead_intent", False)
+        pricing = data.get("pricing_intent", False)
 
         if data.get("requires_human"):
             intent = "human"
-        elif data.get("booking_intent"):
-            # Calendar deactivated: Redirect to Human Handoff
-            intent = "human"
-        elif lead:
-            intent = "lead"
         elif not data.get("requires_rag"):
             intent = "small_talk"
             complexity = 1
             pricing = False
 
         logger.info(
-            f"Router Decision: {intent} (Reason: {data.get('reason')}) | Complexity: {complexity} | Pricing: {pricing} | Lead: {lead}"
+            f"Router Decision: {intent} (Reason: {data.get('reason')}) | Complexity: {complexity} | Pricing: {pricing}"
         )
 
         return {"intent": intent, "complexity_score": complexity, "pricing_intent": pricing}
@@ -413,130 +325,4 @@ async def rag_node(state: AgentState):
         return {"messages": [AIMessage(content="I'm having trouble connecting to my knowledge base right now.")]}
 
 
-async def calendar_node(state: AgentState):
-    """
-    Revised Calendar Node:
-    1. Extract Intent (Search, Verify, Confirm, Reject, Info).
-    2. Handle Action Logic.
-    3. Generate Localized Response.
-    """
-    logger.info("--- CALENDAR NODE (REVISED) ---")
 
-    # 1. Setup & Config
-    messages_history = state["messages"]
-    last_msg = messages_history[-1].content
-
-    # Init Config
-    try:
-        config_record = await get_service_config(state["tenant_id"])
-        cal_config = config_record.config.get("calendar", {})
-        calendar_provider = get_calendar_provider(cal_config)
-    except Exception as e:
-        logger.error(f"Calendar config error: {e}")
-        return {"messages": [AIMessage(content="Sorry, I cannot access the calendar configuration.")]}
-
-    # 2. Extract Intent using LLM
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash", temperature=0, google_api_key=settings.google_api_key
-    )
-
-    # Simplify history for context
-    history_str = "\n".join([f"{m.type}: {m.content}" for m in messages_history[-6:]])
-
-    extract_prompt = CALENDAR_EXTRACT_SYSTEM_PROMPT.format(current_time=datetime.datetime.utcnow().isoformat())
-    extract_messages = [
-        SystemMessage(content=extract_prompt),
-        HumanMessage(content=f"HISTORY:\n{history_str}\n\nLAST MESSAGE: {last_msg}")
-    ]
-
-    action = "search"
-    chosen_time = None
-    email = None
-
-    try:
-        res = await llm.ainvoke(extract_messages)
-        clean_json = res.content.replace("```json", "").replace("```", "").strip()
-        data = json.loads(clean_json)
-        action = data.get("action", "search")
-        chosen_time = data.get("chosen_time")
-        email = data.get("email")
-        logger.info(f"CALENDAR ACTION: {action} | Time: {chosen_time} | Email: {email}")
-    except Exception as e:
-        logger.error(f"Extraction failed: {e}")
-        # Default to search if confused
-        action = "search"
-
-    # 3. Handle Actions
-    system_response = ""
-    requires_human = False
-
-    # Helper for Response Generation
-    async def generate_response(sys_msg: str) -> str:
-        loc_llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash", temperature=0.3, google_api_key=settings.google_api_key
-        )
-        # Pass full history to help with language detection
-        hist_context = messages_history[-3:]
-        prompt = CALENDAR_RESPONSE_SYSTEM_PROMPT.format(system_message=sys_msg)
-        msgs = [SystemMessage(content=prompt)] + hist_context
-        res = await loc_llm.ainvoke(msgs)
-        return res.content
-
-    try:
-        if action == "reject_suggestions":
-            system_response = "I understand. I will transfer you to a human agent to help find a better time."
-            requires_human = True
-
-        elif action == "search":
-            # Search next 30 days
-            start = datetime.datetime.utcnow()
-            end = start + datetime.timedelta(days=30)
-            slots = calendar_provider.get_available_slots(start, end)
-
-            if slots:
-                # Offer top 3 slots
-                formatted_slots = [s.strftime("%A, %d %B at %H:%M") for s in slots[:3]]
-                slots_str = "\n".join(f"- {s}" for s in formatted_slots)
-                system_response = f"I found these available times in the next 30 days:\n{slots_str}\n\nDo any of these work for you?"
-            else:
-                system_response = "I could not find any available slots in the next 30 days. I will connect you with a human agent."
-                requires_human = True
-
-        elif action == "verify_slot":
-            if chosen_time:
-                # Ask for confirmation
-                dt = datetime.datetime.fromisoformat(chosen_time.replace("Z", "+00:00"))
-                readable = dt.strftime("%A, %d %B at %H:%M")
-                system_response = f"Just to check: You would like to book for {readable}. Is this correct?"
-            else:
-                system_response = "I didn't catch the exact time. Which date and time would you like?"
-
-        elif action == "confirm_booking" or action == "provide_info":
-            # User said YES or gave EMAIL. Try to book.
-            # We need both TIME and EMAIL.
-            # If time is missing in extraction (context lost), we fallback to search.
-            if not chosen_time:
-                 system_response = "I lost track of the time you wanted. Could you please say the date and time again?"
-            elif not email:
-                 # Check if we have email in state (future enhancement) or just ask
-                 system_response = "Great! To complete the booking, I just need your email address."
-            else:
-                # Try to book
-                dt = datetime.datetime.fromisoformat(chosen_time.replace("Z", "+00:00"))
-                link = calendar_provider.book_slot(start_time=dt, email=email)
-                if link:
-                    system_response = f"Booking confirmed! Here is your meeting link: {link}"
-                else:
-                    system_response = "I tried to book but that slot seems to be taken now. Let's try another time?"
-
-        # 4. Generate Final Localized Response
-        final_msg = await generate_response(system_response)
-
-        return {
-            "messages": [AIMessage(content=final_msg)],
-            "requires_human": requires_human
-        }
-
-    except Exception as e:
-        logger.error(f"Action Execution Failed: {e}")
-        return {"messages": [AIMessage(content="Sorry, I encountered an error. Please try again.")]}
