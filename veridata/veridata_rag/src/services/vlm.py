@@ -21,16 +21,17 @@ def get_vlm():
     return _vlm
 
 
-def describe_image(image_bytes: bytes, filename: str) -> str:
+def describe_image(image_bytes: bytes, filename: str, model_name: str = None) -> str:
     try:
         logger.info(f"Generating caption for image: {filename}")
         api_key = os.getenv("GOOGLE_API_KEY")
         genai.configure(api_key=api_key)
         settings = get_llm_settings("complex_reasoning")
-        model_name = settings.get(
-            "model", os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-        )
-        clean_model = model_name.replace("models/", "")
+
+        # Priority: Passed ARG > Config > Env > Default
+        final_model_name = model_name or settings.get("model") or os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+        clean_model = final_model_name.replace("models/", "")
         model = genai.GenerativeModel(clean_model)
         image = Image.open(io.BytesIO(image_bytes))
         prompt = IMAGE_DESCRIPTION_PROMPT_TEMPLATE

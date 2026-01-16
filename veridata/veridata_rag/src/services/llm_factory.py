@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 _llm_instances = {}
 
 
-def get_llm(step: str = "generation", provider: str = None) -> Any:
+def get_llm(step: str = "generation", provider: str = None, model_name: str = None) -> Any:
     settings = {}
     if provider:
         settings = {"provider": provider.lower(), "model": None}
@@ -18,15 +18,18 @@ def get_llm(step: str = "generation", provider: str = None) -> Any:
         settings = get_llm_settings(step)
 
     provider = settings.get("provider", "gemini").lower()
-    model_name = settings.get("model")
 
-    instance_key = f"{provider}:{model_name}"
+    # Priority: Passed ARG > Config/Env > Default
+    configured_model = settings.get("model")
+    final_model_name = model_name or configured_model
+
+    instance_key = f"{provider}:{final_model_name}"
 
     if instance_key in _llm_instances:
         return _llm_instances[instance_key]
 
     logger.info(
-        f"Initializing LLM for step '{step}' (Provider: {provider}, Model: {model_name})"
+        f"Initializing LLM for step '{step}' (Provider: {provider}, Model: {final_model_name})"
     )
 
     llm = None
@@ -35,17 +38,17 @@ def get_llm(step: str = "generation", provider: str = None) -> Any:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             logger.error("OPENAI_API_KEY not found. Fallback to Gemini.")
-            return get_llm(step=step, provider="gemini")
+            return get_llm(step=step, provider="gemini", model_name=model_name)
 
-        model_name = model_name or os.getenv("OPENAI_MODEL", "gpt-4o")
-        llm = OpenAI(model=model_name, api_key=api_key)
+        final_model_name = final_model_name or os.getenv("OPENAI_MODEL", "gpt-4o")
+        llm = OpenAI(model=final_model_name, api_key=api_key)
 
     elif provider == "gemini":
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY not set.")
-        model_name = model_name or os.getenv("GEMINI_MODEL", "models/gemini-2.0-flash")
-        llm = Gemini(model=model_name, api_key=api_key)
+        final_model_name = final_model_name or os.getenv("GEMINI_MODEL", "models/gemini-2.0-flash")
+        llm = Gemini(model=final_model_name, api_key=api_key)
 
     else:
         logger.warning(f"Unknown provider '{provider}'. Defaulting to Gemini.")

@@ -3,8 +3,8 @@ import logging
 import os
 
 from openai import AsyncOpenAI
-
 from app.core.config import settings
+from app.core.llm_config import get_llm_config
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,10 @@ async def transcribe_gemini(file_bytes: bytes, mime_type: str = "audio/mp3") -> 
 
     client = genai.Client(api_key=api_key)
 
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    config = await get_llm_config()
+    model_name = config.get("model_name", "gemini-2.0-flash")
+    if not model_name:
+         model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
     try:
         response = client.models.generate_content(

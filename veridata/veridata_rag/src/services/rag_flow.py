@@ -12,6 +12,7 @@ from src.services.embeddings import CustomGeminiEmbedding
 from src.services.hyde import generate_hypothetical_answer
 from src.services.rerank import rerank_documents
 from src.services.llm_factory import get_llm
+from src.services.config_service import get_rag_global_config
 from src.services.memory import add_message, get_chat_history
 from src.storage.repository import get_tenant_languages
 from src.utils.prompts import CONTEXTUALIZE_PROMPT_TEMPLATE
@@ -41,7 +42,7 @@ def get_embed_model():
 # Example: "How much is it?" -> "How much is the Standard Plan?"
 # ==================================================================================
 def contextualize_query(
-    query: str, history: List[Dict[str, str]], provider: str = None
+    query: str, history: List[Dict[str, str]], provider: str = None, model_name: str = None
 ) -> str:
     if not history:
         return query
@@ -51,7 +52,7 @@ def contextualize_query(
     )
 
     try:
-        llm = get_llm(step="contextualization", provider=provider)
+        llm = get_llm(step="contextualization", provider=provider, model_name=model_name)
         prompt = CONTEXTUALIZE_PROMPT_TEMPLATE.format(
             history_str=history_str, query=query
         )
@@ -78,11 +79,12 @@ async def search_documents(
     use_hyde: bool = False,
     use_rerank: bool = False,
     provider: str = "gemini",
+    model_name: str = None,
 ) -> List[Dict[str, Any]]:
     search_query = query
     if use_hyde:
         logger.info(f"🔍 Opt 1 (Accuracy): Using HyDE expansion with {provider}")
-        search_query = generate_hypothetical_answer(query, provider=provider)
+        search_query = generate_hypothetical_answer(query, provider=provider, model_name=model_name)
 
     # 2. Embed Query
     embed_model = get_embed_model()
@@ -108,7 +110,7 @@ async def search_documents(
     if use_rerank and results:
         logger.info(f"Reranking results with {provider}")
         # We rerank against the ORIGINAL query, not the HyDE query
-        results = rerank_documents(query, results, top_k=limit, provider=provider)
+        results = rerank_documents(query, results, top_k=limit, provider=provider, model_name=model_name)
 
     return results
 
@@ -136,7 +138,7 @@ async def get_language_instruction(tenant_id: UUID) -> str:
 
 
 async def prepare_query_context(
-    session_id: Optional[UUID], query: str, provider: Optional[str]
+    session_id: Optional[UUID], query: str, provider: Optional[str], model_name: Optional[str] = None
 ) -> tuple[str, List[Dict]]:
     search_query = query
     history = []
@@ -192,6 +194,7 @@ async def retrieve_context(
     use_rerank: bool,
     provider: Optional[str],
     lang_instruction: str,
+    model_name: Optional[str] = None,
 ) -> tuple[str, str]:
     # 1. External (Live) Data
     live_data = ""
@@ -209,6 +212,7 @@ async def retrieve_context(
         use_hyde=use_hyde,
         use_rerank=use_rerank,
         provider=provider,
+        model_name=model_name,
     )
     if results:
         doc_context = "\n\n".join(
@@ -232,11 +236,12 @@ def generate_llm_response(
     template_args: Dict[str, Any],
     gen_step: str,
     provider: Optional[str],
+    model_name: Optional[str] = None,
 ) -> str:
     """Generic function to format a prompt and generate a response from the LLM."""
     try:
         prompt = prompt_template.format(**template_args)
-        llm = get_llm(step=gen_step, provider=provider)
+        llm = get_llm(step=gen_step, provider=provider, model_name=model_name)
         response = llm.complete(prompt)
         return response.text
     except Exception as e:

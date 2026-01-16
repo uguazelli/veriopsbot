@@ -9,7 +9,11 @@ from src.utils.prompts import RERANK_PROMPT_TEMPLATE
 
 
 def rerank_documents(
-    query: str, documents: List[Dict[str, Any]], top_k: int = 5, provider: str = None
+    query: str,
+    documents: List[Dict[str, Any]],
+    top_k: int = 5,
+    provider: str = None,
+    model_name: str = None,
 ) -> List[Dict[str, Any]]:
     if not documents:
         return []
@@ -17,7 +21,7 @@ def rerank_documents(
     logger.info(
         f"Reranking {len(documents)} documents for query: {query} using step 'rag_search'"
     )
-    llm = get_llm(step="rag_search", provider=provider)
+    llm = get_llm(step="rag_search", provider=provider, model_name=model_name)
     scored_docs = []
 
     for doc in documents:

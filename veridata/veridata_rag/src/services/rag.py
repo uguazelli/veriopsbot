@@ -15,8 +15,10 @@ from src.services.rag_flow import (
     determine_intent,
     retrieve_context,
     generate_llm_response,
+    generate_llm_response,
     save_interaction,
 )
+from src.services.config_service import get_rag_global_config
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +43,13 @@ async def ingest_document(
             logger.error("Image ingestion requires file_bytes")
             return
         logger.info("Processing image with VLM...")
+
+        # Fetch dynamic config to get model_name
+        config = await get_rag_global_config()
+        db_model_name = config.get("model_name")
+
         # Overwrite content with the image description
-        content = describe_image(file_bytes, filename)
+        content = describe_image(file_bytes, filename, model_name=db_model_name)
         # We can prepend a tag so we know it's an image description
         content = f"[IMAGE DESCRIPTION for {filename}]\n{content}"
 
@@ -110,12 +117,25 @@ async def generate_answer(
 ) -> tuple[str, bool, str]:
     log_start(logger, f"Generating answer for query: '{query}'")
 
-    # 1. Config
+    # 0. Load Dynamic Config (DB Override)
+    config = await get_rag_global_config()
+    db_model_name = config.get("model_name")
+
+    # Resolving flags: DB > Request > Default
+    db_use_hyde = config.get("use_hyde")
+    db_use_rerank = config.get("use_rerank")
+
+    if use_hyde is None:
+        use_hyde = db_use_hyde
+    if use_rerank is None:
+        use_rerank = db_use_rerank
+
+    # 1. Config Resolving (Fallback to env/default)
     use_hyde, use_rerank = resolve_config(use_hyde, use_rerank)
     lang_instruction = await get_language_instruction(tenant_id)
 
     # 2. Contextualization
-    search_query, history = await prepare_query_context(session_id, query, provider)
+    search_query, history = await prepare_query_context(session_id, query, provider, model_name=db_model_name)
     history_str = (
         "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in history])
         if history
@@ -137,6 +157,7 @@ async def generate_answer(
             use_rerank,
             provider,
             lang_instruction,
+            model_name=db_model_name,
         )
         answer = generate_llm_response(
             prompt_template=RAG_ANSWER_PROMPT_TEMPLATE,
@@ -148,6 +169,7 @@ async def generate_answer(
             },
             gen_step=gen_step,
             provider=provider,
+            model_name=db_model_name,
         )
     else:
         # Small Talk (No RAG)
@@ -161,6 +183,7 @@ async def generate_answer(
             },
             gen_step=gen_step,
             provider=provider,
+            model_name=db_model_name,
         )
 
     # 5. Persistence
