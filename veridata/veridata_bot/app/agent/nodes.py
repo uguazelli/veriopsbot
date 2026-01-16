@@ -1,19 +1,13 @@
 import json
 import logging
-
-import datetime
-
+import uuid
+from app.integrations.rag import RagClient
+from app.integrations.sheets import fetch_google_sheet_data
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-
-# from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
-
 from app.agent.state import AgentState
 from app.core.config import settings
-from app.core.db import async_session_maker
-from app.integrations.calendar.factory import get_calendar_provider
-from app.models.config import ServiceConfig
-from sqlalchemy import select
+from app.core.llm_config import get_llm_config
 from app.agent.prompts import (
     INTENT_SYSTEM_PROMPT,
     SMALL_TALK_SYSTEM_PROMPT,
@@ -22,10 +16,6 @@ from app.agent.prompts import (
     PRICING_SYSTEM_PROMPT,
     HANDOFF_SYSTEM_PROMPT,
 )
-from app.models.client import Client
-from app.integrations.crm.espocrm import EspoClient
-from app.integrations.crm.hubspot import HubSpotClient
-from app.integrations.sheets import fetch_google_sheet_data
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +36,9 @@ async def pricing_node(state: AgentState):
             product_context = "Error loading product data."
 
     # 2. Call LLM as Sales Enforcer
+    config = await get_llm_config()
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
+        model=config["model_name"],
         temperature=0, # ZERO temperature for strict adherence
         google_api_key=settings.google_api_key,
     )
@@ -66,17 +57,12 @@ async def pricing_node(state: AgentState):
         return {"messages": [AIMessage(content="I'm having trouble checking the price list right now.")]}
 
 
-
-
-
-
-
-
 async def router_node(state: AgentState):
     last_msg = state["messages"][-1].content
 
+    config = await get_llm_config()
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
+        model=config["model_name"],
         temperature=0,
         google_api_key=settings.google_api_key,
         convert_system_message_to_human=True,  # Gemini sometimes prefers this
@@ -127,8 +113,9 @@ async def router_node(state: AgentState):
 async def human_handoff_node(state: AgentState):
     last_msg = state["messages"][-1].content
 
+    config = await get_llm_config()
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
+        model=config["model_name"],
         temperature=0,
         google_api_key=settings.google_api_key,
     )
@@ -155,8 +142,9 @@ async def small_talk_node(state: AgentState):
     """Handles small talk and greetings without RAG."""
     last_msg = state["messages"][-1].content
 
+    config = await get_llm_config()
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
+        model=config["model_name"],
         temperature=0.7, # Slightly higher temperature for friendly chat
         google_api_key=settings.google_api_key,
     )
@@ -185,8 +173,9 @@ async def grader_node(state: AgentState):
             user_question = msg.content
             break
 
+    config = await get_llm_config()
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
+        model=config["model_name"],
         temperature=0,
         google_api_key=settings.google_api_key,
     )
@@ -226,8 +215,9 @@ async def rewrite_node(state: AgentState):
     # [User, AI (bad)]
     grading_reason = state.get("grading_reason", "")
 
+    config = await get_llm_config()
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
+        model=config["model_name"],
         temperature=0,
         google_api_key=settings.google_api_key,
     )
@@ -251,11 +241,6 @@ async def rewrite_node(state: AgentState):
         "retry_count": state.get("retry_count", 0) + 1,
     }
 
-
-import uuid
-
-from app.integrations.rag import RagClient
-from app.integrations.sheets import fetch_google_sheet_data
 
 
 async def rag_node(state: AgentState):
@@ -299,12 +284,17 @@ async def rag_node(state: AgentState):
         external_context = await fetch_google_sheet_data(google_sheets_url)
 
     try:
+        # Fetch dynamic config
+        config = await get_llm_config()
+
         response_data = await client.query(
             message=last_msg,
             session_id=session_uuid,
             complexity_score=complexity_score,
             pricing_intent=pricing_intent,
             external_context=external_context,
+            use_hyde=config["use_hyde"],
+            use_rerank=config["use_rerank"],
         )
 
         rag_response = response_data.get("answer", "No answer returned.")
