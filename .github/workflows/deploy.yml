@@ -40,4 +40,8 @@ jobs:
             cd $PROJECT_ROOT/veridata
             docker compose up --build -d
 
+            echo "🛠️ Rebuilding Dozzle"
+            cd $PROJECT_ROOT/dozzle
+            docker compose up --build -d
+
             echo "🚀 Deployment Complete!"
