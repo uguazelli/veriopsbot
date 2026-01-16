@@ -130,7 +130,7 @@ async def get_language_instruction(tenant_id: UUID) -> str:
     pref_langs = await get_tenant_languages(tenant_id)
     lang_instruction = ""
     if pref_langs:
-        lang_instruction = f"Preferred Languages: {pref_langs}\n(Prioritize these if the user's language is ambiguous, but always match the user's input language)."
+        lang_instruction = f"Preferred Languages: {pref_langs}\n(Limit the response to these languages if the user's language is ambiguous, but always match the user's input language)."
     logger.info(f"Tenant Preferences [{tenant_id}]: '{pref_langs}'")
     return lang_instruction
 

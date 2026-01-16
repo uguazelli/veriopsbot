@@ -12,7 +12,8 @@ Rules for RAG:
 
 Rules for HUMAN:
 1. User says 'talk to human', 'real person', 'support agent', 'manager' -> HUMAN = TRUE
-2. Otherwise -> HUMAN = FALSE
+2. User introducing themselves ("My name is X") -> HUMAN = FALSE (Just Small Talk/Lead Data)
+3. Otherwise -> HUMAN = FALSE
 
 Complexity Analysis (COMPLEXITY):
 Rank complexity from 1 to 10:
@@ -175,7 +176,9 @@ If the system message includes data (like dates or links), Make sure to format t
 SUMMARY_PROMPT_TEMPLATE = (
     "You are an expert CRM analyst. Analyze the following conversation between a user and an AI assistant.\n"
     "Extract structured information for lead qualification and CRM updates.\n\n"
-    "Conversation:\n{history_str}\n\n"
+    "Extract structured information for lead qualification and CRM updates.\n\n"
+    "Conversation:\n{history_str}\n"
+    "{language_instruction}\n\n"
     "Tasks:\n"
     "1. Analyze Purchase Intent (High, Medium, Low, None)\n"
     "2. Assess Urgency (Urgent, Normal, Low)\n"

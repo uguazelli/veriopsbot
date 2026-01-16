@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 from app.agent.prompts import SUMMARY_PROMPT_TEMPLATE
 
 
-async def summarize_start_conversation(session_id: uuid.UUID, rag_client: RagClient) -> dict:
+async def summarize_start_conversation(
+    session_id: uuid.UUID, rag_client: RagClient, language_instruction: str = None
+) -> dict:
     """Fetch history from RAG and generate CRM summary using local LLM logic.
     """
     try:
@@ -34,12 +36,15 @@ async def summarize_start_conversation(session_id: uuid.UUID, rag_client: RagCli
         # Format history
         history_str = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in history_list])
 
-        logger.info(f"📝 SUMMARY HISTORY INPUT:\n{history_str}\n--------------------------------------------------")
-
         # 2. Local Summarization with Gemini
         llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0, google_api_key=settings.google_api_key)
 
-        prompt = SUMMARY_PROMPT_TEMPLATE.format(history_str=history_str)
+        # Prepare Language Instruction
+        lang_directive = ""
+        if language_instruction:
+            lang_directive = f"\n\nIMPORTANT: You MUST write the 'ai_summary' and 'client_description' in {language_instruction}."
+
+        prompt = SUMMARY_PROMPT_TEMPLATE.format(history_str=history_str, language_instruction=lang_directive)
         messages = [HumanMessage(content=prompt)]
 
         response = await llm.ainvoke(messages)

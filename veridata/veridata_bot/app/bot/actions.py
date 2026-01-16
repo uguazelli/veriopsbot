@@ -237,7 +237,12 @@ async def handle_conversation_resolution(client, configs, conversation_data, sen
                 )
 
                 # New Local Summarization Flow
-                summary = await summarize_start_conversation(session_id=session.rag_session_id, rag_client=rag_client)
+                target_lang = configs.get("client_config", {}).get("summary_language")
+                summary = await summarize_start_conversation(
+                    session_id=session.rag_session_id,
+                    rag_client=rag_client,
+                    language_instruction=target_lang
+                )
                 log_success(logger, "Summary generated successfully (Local LLM)")
 
                 # import datetime (removed)

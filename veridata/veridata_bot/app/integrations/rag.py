@@ -43,7 +43,6 @@ class RagClient:
             try:
                 resp = await client.post(url, json=payload, headers=headers)
                 resp.raise_for_status()
-                logger.info(f"✅ RAG Append Success: {role} message added to session {session_id}")
             except Exception as e:
                 logger.error(f"Failed to append message to RAG session {session_id}: {e}")
 
