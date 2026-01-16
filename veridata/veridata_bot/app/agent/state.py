@@ -21,4 +21,5 @@ class AgentState(TypedDict):
     sender_phone: str
     sender_email: str
     history_saved: bool
+    rag_context: str
 

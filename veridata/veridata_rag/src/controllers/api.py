@@ -62,7 +62,7 @@ async def api_query_rag(request: QueryRequest):
         session_id_str = await create_session(request.tenant_id)
         session_id = UUID(session_id_str)
 
-    answer, requires_human = await generate_answer(
+    answer, requires_human, context = await generate_answer(
         request.tenant_id,
         request.query,
         use_hyde=request.use_hyde,
@@ -74,5 +74,8 @@ async def api_query_rag(request: QueryRequest):
         external_context=request.external_context,
     )
     return QueryResponse(
-        answer=answer, requires_human=requires_human, session_id=session_id
+        answer=answer,
+        requires_human=requires_human,
+        session_id=session_id,
+        context=context
     )

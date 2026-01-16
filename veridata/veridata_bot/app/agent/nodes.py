@@ -275,9 +275,18 @@ async def grader_node(state: AgentState):
         google_api_key=settings.google_api_key,
     )
 
+    # Get Context from State (populated by RAG Node)
+    rag_context = state.get("rag_context") or "[Context Not Available]"
+
+    formatted_prompt = GRADER_SYSTEM_PROMPT.format(
+        context=rag_context,
+        question=user_question,
+        student_answer=last_msg
+    )
+
     messages = [
-        SystemMessage(content=GRADER_SYSTEM_PROMPT),
-        HumanMessage(content=f"QUESTION: {user_question}\nSTUDENT ANSWER: {last_msg}"),
+        SystemMessage(content=formatted_prompt),
+        HumanMessage(content="Please grade the above.")
     ]
 
     try:
@@ -368,8 +377,8 @@ async def rag_node(state: AgentState):
     google_sheets_url = state.get("google_sheets_url")
 
     external_context = None
-    if google_sheets_url:
-        # Fetch data locally in the Bot
+    if google_sheets_url and pricing_intent:
+        # Fetch data locally in the Bot ONLY if pricing/product intent is detected
         logger.info(f"📊 Fetching Google Sheet data from {google_sheets_url}...")
         external_context = await fetch_google_sheet_data(google_sheets_url)
 
@@ -385,12 +394,14 @@ async def rag_node(state: AgentState):
         rag_response = response_data.get("answer", "No answer returned.")
         requires_human = response_data.get("requires_human", False)
         new_session_id = response_data.get("session_id")
+        context = response_data.get("context", "")
 
         return {
             "messages": [AIMessage(content=rag_response)],
             "requires_human": requires_human,
             "session_id": new_session_id,
             "history_saved": True,
+            "rag_context": context,
         }
 
     except Exception as e:

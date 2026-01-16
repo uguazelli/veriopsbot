@@ -19,6 +19,7 @@ class QueryResponse(BaseModel):
     answer: str
     requires_human: bool = False
     session_id: Optional[UUID] = None
+    context: Optional[str] = None
 
 
 class SummarizeRequest(BaseModel):

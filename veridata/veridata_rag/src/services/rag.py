@@ -107,7 +107,7 @@ async def generate_answer(
     complexity_score: int = 5,
     pricing_intent: bool = False,
     external_context: Optional[str] = None,
-) -> tuple[str, bool]:
+) -> tuple[str, bool, str]:
     log_start(logger, f"Generating answer for query: '{query}'")
 
     # 1. Config
@@ -166,5 +166,5 @@ async def generate_answer(
     # 5. Persistence
     await save_interaction(session_id, query, answer)
 
-    # Return (Answer, Requires Human Handover - unused for now defaults to False)
-    return answer, False
+    # Return (Answer, Requires Human Handover, Context)
+    return answer, False, context_str if requires_rag else ""
