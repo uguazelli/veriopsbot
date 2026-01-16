@@ -3,8 +3,12 @@ name = "verirag-core"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
+    "alembic>=1.14.0",
+    "sqlalchemy>=2.0.25",
+    "asyncpg>=0.29.0",
+    "pgvector>=0.2.0",
     "fastapi>=0.124.0",
     "google-generativeai>=0.8.3",
     "jinja2>=3.1.6",
@@ -17,3 +21,19 @@ dependencies = [
     "python-multipart>=0.0.20",
     "uvicorn[standard]>=0.38.0",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.1.0",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "D"]
+ignore = ["D100", "D104"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

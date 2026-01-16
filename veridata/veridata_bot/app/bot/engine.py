@@ -1,85 +1,68 @@
-from fastapi import HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from app.models import Client, Subscription, ServiceConfig, BotSession
-from app.integrations.rag import RagClient
-from app.integrations.chatwoot import ChatwootClient
-from app.integrations.espocrm import EspoClient
-from app.integrations.hubspot import HubSpotClient
-import uuid
 import logging
-import httpx
-from app.core.logging import log_start, log_payload, log_skip, log_success, log_error, log_external_call, log_db
+
+from fastapi import HTTPException
+from langchain_core.messages import AIMessage, HumanMessage
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+import uuid
+from langfuse.langchain import CallbackHandler
+from app.agent.graph import agent_app
+from app.bot.actions import (
+    check_subscription_quota,
+    execute_crm_action,
+    get_client_and_config,
+    get_crm_integrations,
+    handle_audio_message,
+    handle_chatwoot_response,
+    handle_conversation_resolution,
+)
+from app.core.logging import log_db, log_error, log_skip, log_start, log_success
+from app.integrations.rag import RagClient
+from app.models.session import BotSession
+from app.dtos.webhook import ChatwootEvent, IntegrationEvent
 
 logger = logging.getLogger(__name__)
 
-async def _get_client_and_config(client_slug: str, db: AsyncSession):
-    # 1. Validate Client
-    query = select(Client).where(Client.slug == client_slug, Client.is_active == True)
-    result = await db.execute(query)
-    client = result.scalars().first()
 
-    if not client:
-        log_error(logger, f"Client not found or inactive: {client_slug}")
-        raise HTTPException(status_code=404, detail="Client not found or inactive")
-
-    # 2. Get Config
-    cfg_query = select(ServiceConfig).where(ServiceConfig.client_id == client.id)
-    cfg_result = await db.execute(cfg_query)
-    cfg_record = cfg_result.scalars().first()
-    configs = cfg_record.config if cfg_record else {}
-
-    return client, configs
-
-def _get_crm_integrations(configs):
-    integrations = []
-
-    # EspoCRM
-    espo_conf = configs.get("espocrm")
-    if espo_conf:
-        integrations.append(EspoClient(
-            base_url=espo_conf["base_url"],
-            api_key=espo_conf["api_key"]
-        ))
-
-    # HubSpot
-    hub_conf = configs.get("hubspot")
-    if hub_conf:
-        token = hub_conf.get("access_token") or hub_conf.get("api_key")
-        if token:
-            integrations.append(HubSpotClient(access_token=token))
-
-    return integrations
-
-async def process_integration_event(client_slug: str, payload: dict, db: AsyncSession):
+async def process_integration_event(client_slug: str, payload_dict: dict, db: AsyncSession):
     log_start(logger, f"Processing Integration Event for {client_slug}")
 
     try:
-        client, configs = await _get_client_and_config(client_slug, db)
-        # espo_config = configs.get("espocrm") # Deprecated: using list of crms
+        # ==================================================================================
+        # STEP 1: VALIDATE PAYLOAD
+        # Ensure the incoming webhook payload matches our expected schema (IntegrationEvent).
+        # ==================================================================================
+        try:
+            event = IntegrationEvent(**payload_dict)
+        except Exception as e:
+            log_error(logger, f"Invalid Payload: {e}")
+            return {"status": "invalid_payload"}
 
-        event_type = payload.get("event")
-        # log_payload(logger, payload, f"Integration Event: {event_type}")
+        # ==================================================================================
+        # STEP 2: LOAD CLIENT & CRM CONFIGURATIONS
+        # access the database to get client details and active CRM credentials (HubSpot, EspoCRM, etc.)
+        # ==================================================================================
+        client, configs = await get_client_and_config(client_slug, db)
 
-        crms = _get_crm_integrations(configs)
+        crms = get_crm_integrations(configs)
 
-        if event_type == "conversation_created":
+        # ==================================================================================
+        # STEP 3: HANDLE "CONVERSATION CREATED" (New Lead)
+        # When a new conversation starts, we treat the user as a potential Lead.
+        # We sync their Name, Email, and Phone to all connected CRMs.
+        # ==================================================================================
+        if event.event == "conversation_created":
             if crms:
-                sender = payload.get("meta", {}).get("sender", {}) or payload.get("sender", {})
-                email = sender.get("email")
-                phone = sender.get("phone_number")
-                name = sender.get("name", "Unknown")
-
-                if email or phone:
-                    log_external_call(logger, "CRM", f"Syncing lead to {len(crms)} integrations")
-                    for crm in crms:
-                        try:
-                            platform_name = crm.__class__.__name__.replace("Client", "")
-                            # log_external_call(logger, platform_name, "Syncing lead")
-                            await crm.sync_lead(name=name, email=email, phone_number=phone)
-                            log_success(logger, f"Lead synced: {platform_name}")
-                        except Exception as e:
-                            log_error(logger, f"CRM Sync failed for {platform_name}: {e}")
+                sender = event.effective_sender
+                if sender and (sender.email or sender.phone_number):
+                    await execute_crm_action(
+                        crms,
+                        "lead",
+                        lambda crm: crm.sync_lead(
+                            name=sender.name, email=sender.email, phone_number=sender.phone_number
+                        ),
+                    )
                 else:
                     log_skip(logger, "Skipping CRM sync: No email or phone provided")
             else:
@@ -87,338 +70,293 @@ async def process_integration_event(client_slug: str, payload: dict, db: AsyncSe
 
             return {"status": "conversation_created_processed"}
 
-        elif event_type in ("contact_created", "contact_updated"):
-            crms = _get_crm_integrations(configs)
+        # ==================================================================================
+        # STEP 4: HANDLE "CONTACT UPDATED"
+        # If a contact's details change in Chatwoot, we mirror those changes to the CRM.
+        # ==================================================================================
+        elif event.event in ("contact_created", "contact_updated"):
             if crms:
-                log_external_call(logger, "CRM", f"Syncing contact for {event_type} to {len(crms)} integrations")
-                for crm in crms:
-                    try:
-                        platform_name = crm.__class__.__name__.replace("Client", "")
-                        await crm.sync_contact(payload)
-                        log_success(logger, f"Contact synced: {platform_name}")
-                    except Exception as e:
-                        log_error(logger, f"CRM Sync failed for {platform_name}: {e}")
+                await execute_crm_action(crms, f"contact ({event.event})", lambda crm: crm.sync_contact(payload_dict))
             else:
-                 log_skip(logger, "Skipping CRM sync: No CRM configured")
+                log_skip(logger, "Skipping CRM sync: No CRM configured")
 
             return {"status": "contact_event_processed"}
 
-        elif event_type == "conversation_status_changed":
-            conversation = payload.get("content") or payload # Sometimes it's directly in payload or content
-            # Chatwoot webhook structure varies. Usually strict webhook has 'id' at top level for some events, but status change usually has 'status' in top level or inside 'conversation_attributes'
-            # It sends the updated conversation object.
-            status = payload.get("status")
+        # ==================================================================================
+        # STEP 5: HANDLE "CONVERSATION RESOLVED"
+        # This is critical for the RAG/Summarization loop.
+        # When a ticket is marked "Resolved":
+        # 1. We fetch the full chat history.
+        # 2. We use an LLM to generate a summary (Issue, Resolution, Sentiment).
+        # 3. We push this summary to the Client's CRM note/timeline.
+        # ==================================================================================
+        elif event.event == "conversation_status_changed":
+            status = payload_dict.get("status")
+            if isinstance(event.content, dict):
+                status = event.content.get("status", status)
+                conversation_data = event.content
+            else:
+                conversation_data = payload_dict.get("content", payload_dict)
 
             if status == "resolved":
-                log_external_call(logger, "BotEngine", "Conversation resolved. Initiating Summarization & Sync.")
+                log_start(logger, "Conversation resolved. Initiating Summarization & Sync.")
 
-                # 1. Find Session
-                conversation_id = str(conversation.get("id"))
-                log_db(logger, f"Looking for BotSession with Client '{client_slug}' (ID: {client.id}) and Ext ID: '{conversation_id}'")
-
-                session_query = select(BotSession).where(
-                    BotSession.client_id == client.id,
-                    BotSession.external_session_id == conversation_id
-                )
-                sess_result = await db.execute(session_query)
-                session = sess_result.scalars().first()
-
-                if session and session.rag_session_id:
-                    rag_config = configs.get("rag")
-                    if rag_config:
-                         try:
-                            # 2. Generate Summary
-                            rag_client = RagClient(
-                                base_url=rag_config["base_url"],
-                                api_key=rag_config.get("api_key", ""),
-                                tenant_id=rag_config["tenant_id"]
-                            )
-                            summary = await rag_client.summarize(
-                                session_id=session.rag_session_id,
-                                provider=rag_config.get("provider", "gemini")
-                            )
-                            log_success(logger, "Summary generated successfully")
-
-                            # Add Timestamps
-                            import datetime
-                            created_at_ts = conversation.get("created_at") # Unix timestamp
-                            now = datetime.datetime.now()
-
-                            if created_at_ts:
-                                start_dt = datetime.datetime.fromtimestamp(int(created_at_ts))
-                                start_str = start_dt.strftime("%d/%m/%Y %H:%M")
-                            else:
-                                start_str = "Unknown"
-
-                            end_str = now.strftime("%d/%m/%Y %H:%M")
-
-                            summary["conversation_start"] = start_str
-                            summary["conversation_end"] = end_str
-
-                            # 3. Sync to CRM
-                            crms = _get_crm_integrations(configs)
-                            if crms:
-                                sender = payload.get("meta", {}).get("sender", {}) or payload.get("sender", {})
-                                email = sender.get("email")
-                                phone = sender.get("phone_number")
-
-                                if email or phone:
-                                    log_external_call(logger, "CRM", f"Updating summary to {len(crms)} integrations")
-                                    for crm in crms:
-                                        try:
-                                            platform_name = crm.__class__.__name__.replace("Client", "")
-                                            await crm.update_lead_summary(email, phone, summary)
-                                            log_success(logger, f"Summary updated in {platform_name}")
-                                        except Exception as e:
-                                            log_error(logger, f"CRM Summary Update failed for {platform_name}: {e}")
-                                else:
-                                    log_skip(logger, "Skipping CRM update: No email or phone to match lead")
-
-                            # 4. Cleanup Session (RAG side)
-                            try:
-                                log_external_call(logger, "Veridata RAG", f"Deleting RAG session {session.rag_session_id}")
-                                await rag_client.delete_session(session.rag_session_id)
-                            except Exception as e:
-                                log_error(logger, f"Failed to delete RAG session: {e}")
-
-                            # 5. Cleanup Session (Bot side)
-                            log_db(logger, f"Deleting BotSession {session.id} for resolved conversation")
-                            await db.delete(session)
-                            await db.commit()
-
-                         except Exception as e:
-                             log_error(logger, f"Summarization flow failed: {e}", exc_info=True)
-                    else:
-                        log_skip(logger, "RAG config missing, cannot summarize")
-                else:
-                    log_skip(logger, "No active BotSession found for this conversation, skipping summary.")
-
-            return {"status": "conversation_status_processed"}
+                sender = event.effective_sender
+                await handle_conversation_resolution(client, configs, conversation_data, sender, db)
+                return {"status": "conversation_status_processed"}
 
         return {"status": "ignored_event"}
     except Exception as e:
         log_error(logger, f"Integration event processing failed: {e}", exc_info=True)
         return {"status": "error"}
 
-async def process_bot_event(client_slug: str, payload: dict, db: AsyncSession):
+
+async def process_bot_event(client_slug: str, payload_dict: dict, db: AsyncSession):
     log_start(logger, f"Processing Bot Event for {client_slug}")
-    # log_payload(logger, payload, "Bot Event Payload")
 
-    # 1. Get Client & Config
-    client, configs = await _get_client_and_config(client_slug, db)
+    # ==================================================================================
+    # STEP 1: VALIDATE PAYLOAD
+    # Convert the raw JSON payload into a strict Pydantic model (ChatwootEvent).
+    # If this fails, the payload is malformed, and we stop immediately.
+    # ==================================================================================
+    try:
+        event = ChatwootEvent(**payload_dict)
+    except Exception as e:
+        log_error(logger, f"Invalid Bot Payload: {e}")
+        return {"status": "invalid_payload"}
 
-    # Check Subscription
-    sub_query = select(Subscription).where(
-        Subscription.client_id == client.id,
-        Subscription.usage_count < Subscription.quota_limit
-    )
-    # Also check dates if needed, skipping for brevity but recommended
-    sub_result = await db.execute(sub_query)
-    subscription = sub_result.scalars().first()
+    # ==================================================================================
+    # STEP 2: LOAD CLIENT & CONFIGURATION
+    # Fetch the Client and its ServiceConfigs (RAG settings, Chatwoot credentials, etc.)
+    # from the database based on the 'client_slug'.
+    # ==================================================================================
+    client, configs = await get_client_and_config(client_slug, db)
 
+    # ==================================================================================
+    # STEP 3: CHECK SUBSCRIPTION QUOTA
+    # Ensure the client has not exceeded their monthly message limit.
+    # If quota is exceeded, we return early and the bot stays silent.
+    # ==================================================================================
+    subscription = await check_subscription_quota(client.id, client_slug, db)
     if not subscription:
-        log_error(logger, f"Subscription limit reached for {client_slug}")
-        # Optionally send a message saying "quota exceeded"
         return {"status": "quota_exceeded"}
 
+    # Extract specific configs for easy access
     rag_config = configs.get("rag")
     chatwoot_config = configs.get("chatwoot")
-    # espo_config logic removed from bot flow (kept only for syncing via integration webhook if needed separately, but primary sync is now in integration handler)
-    espo_config = configs.get("espocrm")
 
+    # Validate that essential configurations exist
     if not rag_config or not chatwoot_config:
         log_error(logger, f"Missing configs for {client_slug}. Found: {list(configs.keys())}")
         raise HTTPException(status_code=500, detail="Configuration missing")
 
-    # Extract info from payload
-    # Assuming Chatwoot webhook payload structure
-    # event_type = widget_triggered, message_created etc.
-    event_type = payload.get("event")
+    # ==================================================================================
+    # STEP 4: FILTER EVENTS
+    # We only care about:
+    # 1. Incoming messages (from users, not bot)
+    # 2. Private messages or public tweets depending on valid command logic
+    # 3. Conversations that are NOT already 'snoozed' or 'open' (handled by humans)
+    # ==================================================================================
+    if not event.is_valid_bot_command:
+        if event.event != "message_created":
+            log_skip(logger, f"Ignored event type: {event.event}")
+            return {"status": "ignored_event"}
+        if not event.is_incoming:
+            log_skip(logger, "Ignored outgoing message")
+            return {"status": "ignored_outgoing"}
+        if event.conversation and event.conversation.status in ("snoozed", "open"):
+            log_skip(logger, f"Ignored conversation with status: {event.conversation.status}")
+            return {"status": f"ignored_{event.conversation.status}"}
 
-    if event_type != "message_created":
-        log_skip(logger, f"Ignored event type: {event_type}")
-        return {"status": "ignored_event"}
+        return {"status": "ignored_generic"}
 
-    message_data = payload.get("content", "")
-    conversation_id = str(payload.get("conversation", {}).get("id"))
-    sender = payload.get("sender", {})
-    sender_type = payload.get("message_type") # incoming / outgoing
+    # Basic Message Data
+    conversation_id = event.conversation_id
+    user_query = event.content
+    logger.info(f"Message from {event.message_type} in conversation {conversation_id}")
 
-    logger.info(f"Message from {sender_type} in conversation {conversation_id}")
+    # ==================================================================================
+    # STEP 5: HANDLE AUDIO ATTACHMENTS (Voice Notes)
+    # If the message has no text but has audio, we download and transcribe it locally.
+    # ==================================================================================
+    if not user_query and event.attachments:
+        transcript = await handle_audio_message(event.attachments, rag_config)
+        if transcript:
+            user_query = transcript
 
-    if sender_type != "incoming":
-        log_skip(logger, "Ignored outgoing message")
-        return {"status": "ignored_outgoing"}
-
-    conversation_dict = payload.get("conversation", {})
-    conversation_status = conversation_dict.get("status")
-
-    # Strict Status Check:
-    # 1. Open or Snoozed -> Ignore (Bot is paused)
-    # 2. Pending or Resolved -> Process (Bot is active)
-
-    if conversation_status == "snoozed" or conversation_status == "open":
-        log_skip(logger, f"Ignored conversation with status: {conversation_status}")
-        return {"status": f"ignored_{conversation_status}"}
-
-    user_query = payload.get("content")
-    attachments = payload.get("attachments", [])
-    logger.info(f"Received {len(attachments)} attachments")
-
-    if not user_query and attachments:
-        # Try to find audio attachment
-        for att in attachments:
-             file_type = att.get("file_type")
-             data_url = att.get("data_url")
-             logger.info(f"Processing attachment: type={file_type}, url={data_url}")
-
-             if file_type == "audio":
-                 filename = f"audio.{att.get('extension', 'mp3')}"
-                 logger.info(f"Found audio attachment. Downloading from: {data_url}")
-
-                 try:
-                     async with httpx.AsyncClient(follow_redirects=True) as http_client:
-                         # Download audio
-                         log_external_call(logger, "Internal/Web", f"Downloading audio from {data_url}")
-                         resp = await http_client.get(data_url)
-                         resp.raise_for_status()
-                         audio_bytes = resp.content
-                         logger.info(f"Download complete. Size: {len(audio_bytes)} bytes")
-
-                         # Transcribe
-                         rag_client = RagClient(
-                            base_url=rag_config["base_url"],
-                            api_key=rag_config.get("api_key", ""),
-                            tenant_id=rag_config["tenant_id"]
-                         )
-
-                         log_external_call(logger, "RAG Transcribe", "Sending audio for transcription")
-                         transcript = await rag_client.transcribe(audio_bytes, filename)
-                         log_success(logger, f"Transcription result: '{transcript}'")
-
-                         if transcript:
-                             user_query = transcript
-                             break # One audio per message supported for now
-                 except Exception as e:
-                     log_error(logger, f"Failed to process audio attachment: {e}", exc_info=True)
-
+    # If still empty (e.g. image only, or empty audio), skip.
     if not user_query:
-         log_skip(logger, "Empty message content and no valid audio transcription")
-         return {"status": "empty_message"}
+        log_skip(logger, "Empty message content and no valid audio transcription")
+        return {"status": "empty_message"}
 
-    # 3. Session Management
+    # ==================================================================================
+    # STEP 6: SESSION MANAGEMENT
+    # Find the existing BotSession map (External Chatwoot ID <-> Internal BotSession).
+    # If none exists, create a new one.
+    # ==================================================================================
     session_query = select(BotSession).where(
-        BotSession.client_id == client.id,
-        BotSession.external_session_id == conversation_id
+        BotSession.client_id == client.id, BotSession.external_session_id == conversation_id
     )
+
     sess_result = await db.execute(session_query)
     session = sess_result.scalars().first()
 
     if not session:
         log_start(logger, f"Creating new BotSession for conversation {conversation_id}")
-        session = BotSession(
-            client_id=client.id,
-            external_session_id=conversation_id
-        )
+        session = BotSession(client_id=client.id, external_session_id=conversation_id)
         db.add(session)
         await db.commit()
         await db.refresh(session)
     else:
         log_db(logger, f"Found existing BotSession: {session.id}, RAG ID: {session.rag_session_id}")
 
-    # 4. RAG Call
-    # Extract optional params from config
-    rag_provider = rag_config.get("provider")
-    rag_use_hyde = rag_config.get("use_hyde")
-    rag_use_rerank = rag_config.get("use_rerank")
+    # ==================================================================================
+    # STEP 7: BUILD CONVERSATION HISTORY
+    # If this session is linked to a RAG session, fetch previous messages from the RAG Service.
+    # This gives the Agent "Long Term Memory".
+    # ==================================================================================
+    history_messages = []
+    if session and session.rag_session_id:
+        try:
+            rag_client = RagClient(
+                base_url=rag_config["base_url"],
+                api_key=rag_config.get("api_key", ""),
+                tenant_id=rag_config["tenant_id"],
+            )
+            history_data = await rag_client.get_history(session.rag_session_id)
+            for msg in history_data:
+                if msg["role"] == "user":
+                    history_messages.append(HumanMessage(content=msg["content"]))
+                elif msg["role"] == "ai":
+                    history_messages.append(AIMessage(content=msg["content"]))
+        except Exception as e:
+            logger.warning(f"Failed to fetch chat history: {e}")
 
-    rag_client = RagClient(
-        base_url=rag_config["base_url"],
-        api_key=rag_config.get("api_key", ""), # Safe get
-        tenant_id=rag_config["tenant_id"]
-    )
+    # Combine History + Current Message
+    full_messages = history_messages + [HumanMessage(content=user_query)]
+
+    # ==================================================================================
+    # STEP 8: EXECUTE AGENT (LangGraph)
+    # 1. Router Node: Decides usage (RAG vs Human Handoff).
+    # 2. Execution Node: Runs RAG query or generates Handoff message.
+    # 3. Output: Returns final Answer and Metadata (requires_human).
+    # ==================================================================================
+    initial_state = {
+        "messages": full_messages,
+        "tenant_id": rag_config.get("tenant_id"),
+        "session_id": str(session.rag_session_id) if session.rag_session_id else None,
+        "google_sheets_url": rag_config.get("google_sheets_url"),
+        "client_slug": client_slug,
+        "sender_name": event.sender.name if event.sender else "",
+        "sender_email": event.sender.email if event.sender else "",
+        "sender_phone": event.sender.phone_number if event.sender else "",
+    }
+
+    logger.info(f"DEBUG: Graph Input Messages: {[m.content for m in full_messages]}")
 
     try:
-        # Prepare kwargs
-        query_params = {}
-        if rag_provider: query_params["provider"] = rag_provider
-        if rag_use_hyde is not None: query_params["use_hyde"] = rag_use_hyde
-        if rag_use_rerank is not None: query_params["use_rerank"] = rag_use_rerank
 
-        # Extract handoff rules
-        handoff_rules = rag_config.get("handoff_rules")
-        if handoff_rules:
-            query_params["handoff_rules"] = handoff_rules
 
-        # Extract google sheets url
-        gs_url = rag_config.get("google_sheets_url")
-        if gs_url:
-            query_params["google_sheets_url"] = gs_url
+        # Prepare Langfuse Context (Session & User)
+        lf_user_id = "unknown_user"
+        if event.sender:
+            # Priority: Email -> Phone -> ID -> Name
+            if event.sender.email:
+                lf_user_id = event.sender.email
+            elif event.sender.phone_number:
+                lf_user_id = event.sender.phone_number
+            elif event.sender.id:
+                lf_user_id = str(event.sender.id)
+            elif event.sender.name:
+                lf_user_id = event.sender.name
 
-        log_external_call(logger, "Veridata RAG", f"Query: '{user_query}' | Params: {query_params}")
-        rag_response = await rag_client.query(
-            message=user_query,
-            session_id=session.rag_session_id,
-            **query_params
+        # Use Chatwoot Conversation ID as the Trace Session
+        lf_session_id = conversation_id or "unknown_session"
+
+        langfuse_handler = CallbackHandler()
+
+        # Pass context via metadata (Langfuse specific keys)
+        result = await agent_app.ainvoke(
+            initial_state,
+            config={
+                "callbacks": [langfuse_handler],
+                "metadata": {
+                    "langfuse_user_id": lf_user_id,
+                    "langfuse_session_id": lf_session_id,
+                },
+            },
         )
-        log_success(logger, "RAG response received successfully")
+        answer = result["messages"][-1].content
+        logger.info(f"DEBUG: Agent Answer: {answer}")
+
+        requires_human = result.get("requires_human", False)
+        rag_session_id = result.get("session_id")
+
+        try:
+            rag_client_for_save = RagClient(
+                base_url=rag_config["base_url"],
+                api_key=rag_config.get("api_key", ""),
+                tenant_id=rag_config["tenant_id"],
+            )
+
+            # 1. Update Session ID if newly created by RAG Node
+            if rag_session_id:
+                rag_uuid = uuid.UUID(str(rag_session_id))
+                if session.rag_session_id != rag_uuid:
+                    stmt = update(BotSession).where(BotSession.id == session.id).values(rag_session_id=rag_uuid)
+                    await db.execute(stmt)
+                    await db.commit()
+                    session.rag_session_id = rag_uuid
+                    logger.info(f"💾 Persisted RAG Session ID via SQL: {rag_session_id}")
+
+            # 2. Check if we need to manually persist the interaction
+            # If the RAG node ran, it returns "history_saved=True" (and we trust it).
+            # If NOT, we must save manually.
+            history_saved = result.get("history_saved", False)
+
+            if not history_saved:
+                 # Check if we have an active RAG session to append to
+                target_rag_id = session.rag_session_id
+
+                # If no session exists yet, create one
+                if not target_rag_id:
+                     new_id_str = await rag_client_for_save.create_session()
+                     if new_id_str:
+                        target_rag_id = uuid.UUID(new_id_str)
+                        stmt = update(BotSession).where(BotSession.id == session.id).values(rag_session_id=target_rag_id)
+                        await db.execute(stmt)
+                        await db.commit()
+                        session.rag_session_id = target_rag_id
+                        logger.info(f"🆕 Created new RAG Session ID manually: {target_rag_id}")
+
+                if target_rag_id:
+                    # Append User Query and Agent Answer
+                    await rag_client_for_save.append_message(target_rag_id, "user", user_query)
+                    await rag_client_for_save.append_message(target_rag_id, "ai", answer)
+                    logger.info(f"💾 Manually appended interaction to RAG Session {target_rag_id}")
+
+        except Exception as e:
+            logger.warning(f"Failed to persist RAG Session/History: {e}")
+
     except Exception as e:
-        log_error(logger, f"RAG Error: {e}", exc_info=True)
-        return {"status": "rag_error"}
+        logger.error(f"LangGraph execution failed: {e}", exc_info=True)
+        return {"status": "agent_error"}
 
-    answer = rag_response.get("answer")
-    requires_human = rag_response.get("requires_human", False)
-    new_rag_session_id = rag_response.get("session_id")
+    # ==================================================================================
+    # STEP 9: SEND RESPONSE TO CHATWOOT
+    # Send the agent's answer back to the user via Chatwoot API.
+    # If 'requires_human' is True, also toggle conversation status to Open.
+    # ==================================================================================
+    await handle_chatwoot_response(conversation_id, answer, requires_human, chatwoot_config)
 
-    # Update session if needed
-    if new_rag_session_id and str(new_rag_session_id) != str(session.rag_session_id):
-        log_db(logger, f"Updating RAG session ID to {new_rag_session_id}")
-        session.rag_session_id = uuid.UUID(new_rag_session_id)
-        db.add(session) # Mark for update
-
-    # 5. Send to Chatwoot
-    cw_client = ChatwootClient(
-        base_url=chatwoot_config["base_url"],
-        api_token=chatwoot_config["api_key"],
-        account_id=chatwoot_config.get("account_id", 1)
-    )
-
-    if answer:
-        log_external_call(logger, "Chatwoot", f"Sending response to conversation {conversation_id}")
-        await cw_client.send_message(
-            conversation_id=conversation_id,
-            message=answer
-        )
-        log_success(logger, "Response sent to Chatwoot")
-
-    else:
-        log_skip(logger, "RAG returned no answer (empty response)")
-
-    # Status Management
-    try:
-        if requires_human:
-             # Rule 1a: Handoff -> Open
-             log_start(logger, f"Handover requested for session {conversation_id}")
-             await cw_client.toggle_status(conversation_id, "open")
-             log_success(logger, "Conversation opened for human agent")
-
-        else:
-             # Rule 1b & General Stability: Force Pending
-             # Chatwoot often auto-opens on reply, so we must enforce pending to keep it in bot's court.
-             log_external_call(logger, "Chatwoot", f"Enforcing pending status for conversation {conversation_id}")
-             await cw_client.toggle_status(conversation_id, "pending")
-             log_success(logger, "Conversation set to pending")
-
-    except Exception as e:
-         log_error(logger, f"Failed to update status for {conversation_id}: {e}")
-
-    # Increment Usage
+    # ==================================================================================
+    # STEP 10: UPDATE USAGE QUOTA
+    # Increment the usage count for this client's subscription.
+    # ==================================================================================
     subscription.usage_count += 1
     db.add(subscription)
+    db.add(session)
     await db.commit()
-
-    # 6. CRM Sync
-    # Removed from Bot Flow - moved to Integration Flow
 
     log_success(logger, "Bot Event Processed Successfully")
     return {"status": "processed"}

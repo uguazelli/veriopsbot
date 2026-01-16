@@ -1,0 +1,16 @@
+name: dozzle
+services:
+  dozzle:
+    container_name: dozzle
+    image: amir20/dozzle:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - 4022:8080
+    networks:
+      - veridata.network
+    restart: always
+
+networks:
+  veridata.network:
+    external: true

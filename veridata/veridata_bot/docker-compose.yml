@@ -3,10 +3,12 @@ name: veridata
 services:
   veridata_bot:
     build: .
-    container_name: veridata_bot
+    container_name: veridata.bot
     restart: always
     ports:
       - "${APP_PORT:-4019}:4019"
+    env_file:
+      - .env
     environment:
       - APP_PORT=4019
       - ADMIN_USER=${ADMIN_USER:-vd}
@@ -16,23 +18,10 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-veridata_pass}
       - POSTGRES_HOST=${POSTGRES_HOST:-veridata.postgres}
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+
     volumes:
       - .:/app
-    develop:
-      watch:
-        - action: sync
-          path: .
-          target: /app
-          ignore:
-            - .venv/
-            - __pycache__/
-            - .git/
-        - action: rebuild
-          path: pyproject.toml
-        - action: rebuild
-          path: uv.lock
-        - action: rebuild
-          path: Dockerfile
+
     networks:
       veridata.network:
         aliases:

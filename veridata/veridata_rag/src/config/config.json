@@ -1,0 +1,24 @@
+{
+    "llm_config": {
+        "use_hyde": true,
+        "use_rerank": true,
+        "steps": {
+            "contextualization": {
+                "provider": "gemini",
+                "model": "models/gemini-2.0-flash"
+            },
+            "rag_search": {
+                "provider": "gemini",
+                "model": "models/gemini-2.0-flash"
+            },
+            "generation": {
+                "provider": "gemini",
+                "model": "models/gemini-2.0-flash"
+            },
+            "complex_reasoning": {
+                "provider": "gemini",
+                "model": "models/gemini-2.5-flash"
+            }
+        }
+    }
+}

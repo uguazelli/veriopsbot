@@ -1,126 +1,30 @@
 import asyncio
 import os
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 
 router = APIRouter()
 
-# Note: In veridata_rag, working directory might be root, logs are in logs/
-# But code is in src/controllers.
-# Relative path from src/controllers would be ../../logs/veridata_rag.log
-# But open() uses CWD. Assuming CWD is project root.
 LOG_FILE = "logs/veridata_rag.log"
 
-html = """
-<!DOCTYPE html>
-<html>
-    <head>
-        <title>Live Logs - Veridata RAG</title>
-        <style>
-            body { font-family: monospace; background: #1e1e1e; color: #d4d4d4; margin: 0; padding: 20px; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
-            h1 { margin-top: 0; color: #569cd6; font-size: 1.2rem; display: flex; justify-content: space-between; align-items: center; }
-            #controls { margin-bottom: 10px; display: flex; gap: 10px; }
-            input { background: #3c3c3c; border: 1px solid #555; color: white; padding: 5px; border-radius: 4px; flex-grow: 1; }
-            button { background: #0e639c; color: white; border: none; padding: 5px 15px; border-radius: 4px; cursor: pointer; }
-            button:hover { background: #1177bb; }
-            #logs { flex-grow: 1; overflow-y: auto; background: #000; padding: 10px; border: 1px solid #333; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; }
-            .log-line { border-bottom: 1px solid #222; padding: 2px 0; }
-            .filtered { display: none; }
-            .highlight { color: #f1fa8c; font-weight: bold; }
-        </style>
-    </head>
-    <body>
-        <h1>
-            <span>Veridata RAG Logs</span>
-            <span id="status" style="font-size: 0.8rem; color: #888;">Connecting...</span>
-        </h1>
-        <div id="controls">
-            <input type="text" id="filterInput" placeholder="Filter logs (regex supported)..." onkeyup="applyFilter()">
-            <button onclick="clearLogs()">Clear</button>
-            <button onclick="toggleAutoScroll()" id="scrollBtn">Auto-scroll: ON</button>
-        </div>
-        <div id="logs"></div>
-        <script>
-            var ws = new WebSocket((window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host + "/ops/logs/ws");
-            var logsDiv = document.getElementById("logs");
-            var autoScroll = true;
-            var filterValue = "";
+templates = Jinja2Templates(directory="src/templates")
 
-            ws.onmessage = function(event) {
-                var lines = event.data.split('\\n');
-                lines.forEach(function(line) {
-                    if (!line) return;
-                    var div = document.createElement("div");
-                    div.className = "log-line";
-                    div.textContent = line;
-                    logsDiv.appendChild(div);
-                });
-                applyFilter(); // Re-apply filter to new lines
-                if (autoScroll) logsDiv.scrollTop = logsDiv.scrollHeight;
-            };
-
-            ws.onopen = function() {
-                document.getElementById("status").textContent = "Connected";
-                document.getElementById("status").style.color = "#4caf50";
-            };
-
-            ws.onclose = function() {
-                document.getElementById("status").textContent = "Disconnected";
-                document.getElementById("status").style.color = "#f44336";
-            };
-
-            function applyFilter() {
-                var input = document.getElementById("filterInput").value;
-                filterValue = input.toLowerCase();
-                var lines = logsDiv.getElementsByClassName("log-line");
-                var regex = null;
-                try {
-                     if (input) regex = new RegExp(input, "i");
-                } catch(e) {}
-
-                for (var i = 0; i < lines.length; i++) {
-                    var text = lines[i].textContent;
-                    if (!input) {
-                        lines[i].classList.remove("filtered");
-                        continue;
-                    }
-                    if (regex && regex.test(text)) {
-                         lines[i].classList.remove("filtered");
-                    } else {
-                         lines[i].classList.add("filtered");
-                    }
-                }
-            }
-
-            function clearLogs() {
-                logsDiv.innerHTML = "";
-            }
-
-            function toggleAutoScroll() {
-                autoScroll = !autoScroll;
-                document.getElementById("scrollBtn").textContent = "Auto-scroll: " + (autoScroll ? "ON" : "OFF");
-                if (autoScroll) logsDiv.scrollTop = logsDiv.scrollHeight;
-            }
-        </script>
-    </body>
-</html>
-"""
 
 @router.get("/logs/view", response_class=HTMLResponse)
-async def live_logs_page():
-    return html
+async def live_logs_page(request: Request):
+    return templates.TemplateResponse("logs.html", {"request": request})
+
 
 @router.websocket("/logs/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
         if not os.path.exists(LOG_FILE):
-             await websocket.send_text(f"Log file not waiting: {LOG_FILE}")
-             return
+            await websocket.send_text(f"Log file not waiting: {LOG_FILE}")
+            return
 
-        # Tail existing logs (last 50 lines)
         with open(LOG_FILE, "r") as f:
-            # Simple tail implementation
             try:
                 f.seek(0, os.SEEK_END)
                 end = f.tell()
@@ -129,13 +33,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 else:
                     f.seek(0)
                 content = f.read()
-                lines = content.splitlines()[-50:] # Keep last 50
+                lines = content.splitlines()[-50:]
                 for line in lines:
-                     await websocket.send_text(line)
+                    await websocket.send_text(line)
             except Exception as e:
                 await websocket.send_text(f"Error reading history: {e}")
 
-            # Follow new lines
             f.seek(0, os.SEEK_END)
             while True:
                 line = f.readline()
@@ -146,5 +49,5 @@ async def websocket_endpoint(websocket: WebSocket):
 
     except WebSocketDisconnect:
         pass
-    except Exception as e:
+    except Exception:
         pass

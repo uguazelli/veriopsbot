@@ -1,0 +1,23 @@
+name: veridata
+
+services:
+  veridata_admin:
+    build: .
+    container_name: veridata.admin
+    env_file:
+      - .env
+    ports:
+      - "${VERIDATA_ADMIN_PORT:-8000}:8000"
+    volumes:
+      - ./app:/app/app
+      - ./logs:/app/logs
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    networks:
+      veridata.network:
+        aliases:
+          - veridata.admin
+
+
+networks:
+  veridata.network:
+    external: true

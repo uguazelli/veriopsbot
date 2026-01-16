@@ -2,33 +2,25 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-
-from src.db import init_db, close_pool
 from src.controllers import web, api, ops
-from src.logging import setup_logging
+from src.storage.engine import dispose_engine
+from src.config.config import load_config_from_db
+from src.config.logging import setup_logging
 
-# Setup Logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
-# Lifespan
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    await load_config_from_db()
     yield
-    close_pool()
+    await dispose_engine()
+
 
 app = FastAPI(title="VeriRag Core", lifespan=lifespan)
 
-# Include Routers
-# Web (HTML) Router - Mounts at root
 app.include_router(web.router)
-
-# API (JSON) Router - Mounts at /api
 app.include_router(api.router, prefix="/api")
-
-# Ops Router
 app.include_router(ops.router, prefix="/ops", tags=["ops"])
-
-# Static files
 app.mount("/static", StaticFiles(directory="src/static"), name="static")

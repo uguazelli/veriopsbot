@@ -1,24 +1,29 @@
-FROM python:3.12-slim-bookworm
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project --no-dev
 
-# Install uv from the official image
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+FROM python:3.13-slim-bookworm
 
+# Create a non-root user
+RUN groupadd -r veridata && useradd -r -g veridata veridata
+
+ENV PATH="/app/.venv/bin:$PATH"
 WORKDIR /app
 
-# Copy dependency files
-COPY pyproject.toml uv.lock ./
+# Copy the environment with ownership
+COPY --from=builder --chown=veridata:veridata /app/.venv /app/.venv
 
-# Install dependencies
-# --frozen ensures we use the exact versions from uv.lock
-# --no-dev to skip dev dependencies if any
-RUN uv sync --frozen --no-dev
+# Copy source code with ownership
+COPY --chown=veridata:veridata src/ ./src/
+COPY --chown=veridata:veridata alembic.ini .
+COPY --chown=veridata:veridata migrations/ ./migrations/
 
-# Copy source code
-COPY src/ ./src/
-
-# Expose the application port
 EXPOSE 8000
 
-# Run the application
-# We use `uv run` to ensure the environment matches the one created by `uv sync`
-CMD ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Switch to non-root user
+USER veridata
+
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

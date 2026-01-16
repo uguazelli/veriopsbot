@@ -1,6 +1,8 @@
-from sqlalchemy import String, Boolean, Integer
+from sqlalchemy import Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.models.base import Base
+
 
 class Client(Base):
     __tablename__ = "clients"

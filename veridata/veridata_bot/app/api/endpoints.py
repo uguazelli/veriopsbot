@@ -1,13 +1,22 @@
 from fastapi import APIRouter
 from fastcrud import crud_router
-from app.models import Client, Subscription, ServiceConfig, BotSession
-from app.schemas import (
-    ClientCreate, ClientUpdate, ClientRead,
-    SubscriptionCreate, SubscriptionUpdate, SubscriptionRead,
-    ServiceConfigCreate, ServiceConfigUpdate, ServiceConfigRead,
-    BotSessionCreate, BotSessionUpdate, BotSessionRead
-)
+
 from app.core.db import async_session_maker
+from app.models import BotSession, Client, ServiceConfig, Subscription
+from app.dtos import (
+    BotSessionCreate,
+    BotSessionRead,
+    BotSessionUpdate,
+    ClientCreate,
+    ClientRead,
+    ClientUpdate,
+    ServiceConfigCreate,
+    ServiceConfigRead,
+    ServiceConfigUpdate,
+    SubscriptionCreate,
+    SubscriptionRead,
+    SubscriptionUpdate,
+)
 
 router = APIRouter()
 
@@ -20,7 +29,7 @@ router.include_router(
         update_schema=ClientUpdate,
         select_schema=ClientRead,
         path="/clients",
-        tags=["Clients"]
+        tags=["Clients"],
     )
 )
 
@@ -33,7 +42,7 @@ router.include_router(
         update_schema=SubscriptionUpdate,
         select_schema=SubscriptionRead,
         path="/subscriptions",
-        tags=["Subscriptions"]
+        tags=["Subscriptions"],
     )
 )
 
@@ -46,7 +55,7 @@ router.include_router(
         update_schema=ServiceConfigUpdate,
         select_schema=ServiceConfigRead,
         path="/configs",
-        tags=["Service Configs"]
+        tags=["Service Configs"],
     )
 )
 
@@ -59,6 +68,6 @@ router.include_router(
         update_schema=BotSessionUpdate,
         select_schema=BotSessionRead,
         path="/sessions",
-        tags=["Bot Sessions"]
+        tags=["Bot Sessions"],
     )
 )
