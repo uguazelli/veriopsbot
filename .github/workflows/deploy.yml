@@ -23,25 +23,9 @@ jobs:
             cd $PROJECT_ROOT
             git pull origin main
 
-            echo "🛠️ Rebuilding Databases"
-            cd $PROJECT_ROOT/databases
-            docker compose up --build -d
-
-            echo "🛠️ Rebuilding Chatwoot"
-            cd $PROJECT_ROOT/chatwoot
-            docker compose up --build -d
-
-            echo "🛠️ Rebuilding EspoCRM"
-            # Pointing to the correct 'crm' subfolder
-            cd $PROJECT_ROOT/espocrm/crm
-            docker compose up --build -d
-
             echo "🛠️ Rebuilding VeriData"
             cd $PROJECT_ROOT/veridata
-            docker compose up --build -d
-
-            echo "🛠️ Rebuilding Dozzle"
-            cd $PROJECT_ROOT/dozzle
+            docker compose down
             docker compose up --build -d
 
             echo "🚀 Deployment Complete!"
