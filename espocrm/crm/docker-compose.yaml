@@ -1,6 +1,6 @@
 services:
   espocrm:
-    image: espocrm/espocrm:latest
+    image: espocrm/espocrm:9.2.7-apache
     container_name: ${CONTAINER_NAME-espocrm}
     restart: always
     environment:
@@ -12,7 +12,7 @@ services:
       - ESPOCRM_DATABASE_NAME=${POSTGRES_DB}
       - ESPOCRM_ADMIN_USERNAME=${ESPOCRM_ADMIN_USERNAME}
       - ESPOCRM_ADMIN_PASSWORD=${ESPOCRM_ADMIN_PASSWORD}
-      - ESPOCRM_SITE_URL=${ESPOCRM_SITE_URL-http://localhost:${ESPOCRM_PORT}}
+      - ESPOCRM_SITE_URL=${ESPOCRM_SITE_URL-http://localhost:4012}
     ports:
       - "${ESPOCRM_PORT}:80"
     volumes: &espocrm_volumes
@@ -28,7 +28,7 @@ services:
   espocrm-daemon:
     image: espocrm/espocrm:latest
     container_name: ${CONTAINER_NAME-espocrm}-daemon
-    command: php /var/www/html/cron.php
+    command: bash -c "while true; do php /var/www/html/cron.php; sleep 60; done"
     restart: always
     volumes: *espocrm_volumes
     networks:

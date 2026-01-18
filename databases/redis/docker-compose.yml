@@ -1,3 +1,4 @@
+name: databases
 services:
   redis:
     image: redis:alpine

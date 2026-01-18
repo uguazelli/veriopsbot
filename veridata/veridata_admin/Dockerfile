@@ -31,4 +31,4 @@ COPY --chown=veridata:veridata . .
 USER veridata
 
 # Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "python -m app.scripts.pre_start && uvicorn app.main:app --host 0.0.0.0 --port 8000"]

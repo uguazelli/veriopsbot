@@ -1,4 +1,4 @@
 include:
-  - path: ./postgres/docker-compose.yaml
-  - path: ./redis/docker-compose.yaml
-  # - path: ./pgadmin/docker-compose.yaml
+  - path: ./postgres/docker-compose.yml
+  - path: ./redis/docker-compose.yml
+  # - path: ./pgadmin/docker-compose.yml
