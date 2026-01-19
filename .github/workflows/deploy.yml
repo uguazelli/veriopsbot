@@ -17,11 +17,11 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD }}
           script: |
             # Set the project root to avoid navigation errors
-            PROJECT_ROOT="/home/administrator/veriopsbot"
+            PROJECT_ROOT="/home/administrator/VeriRevOps"
 
             echo "📥 Pulling latest code..."
             cd $PROJECT_ROOT
-            git pull origin main
+            git pull
 
             echo "🛠️ Rebuilding VeriData"
             cd $PROJECT_ROOT/veridata
