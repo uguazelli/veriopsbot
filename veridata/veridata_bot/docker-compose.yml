@@ -6,11 +6,11 @@ services:
     container_name: veridata.bot
     restart: always
     ports:
-      - "${APP_PORT:-4019}:4019"
+      - "${APP_PORT:-8000}:8000"
     env_file:
       - .env
     environment:
-      - APP_PORT=4019
+      - APP_PORT=${APP_PORT:-8000}
       - ADMIN_USER=${ADMIN_USER:-vd}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-vd}
       - POSTGRES_DB=${POSTGRES_DB:-veridata_bot}

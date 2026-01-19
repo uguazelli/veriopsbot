@@ -9,7 +9,7 @@ services:
 
   rails:
     <<: *base
-    container_name: rails
+    container_name: veridata.chatwoot
     ports:
       - "127.0.0.1:${CHATWOOT_PORT:-3000}:3000"
     environment:
@@ -22,11 +22,11 @@ services:
     networks:
       veridata.network:
         aliases:
-          - veridata.chatwoot.rails
+          - veridata.chatwoot
 
   sidekiq:
     <<: *base
-    container_name: chatwoot_sidekiq
+    container_name: veridata.chatwoot_sidekiq
     environment:
       - NODE_ENV=production
       - RAILS_ENV=production
@@ -36,7 +36,7 @@ services:
     networks:
       veridata.network:
         aliases:
-          - veridata.chatwoot.sidekiq
+          - veridata.chatwoot_sidekiq
 
 volumes:
   storage_data:

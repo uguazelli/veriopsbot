@@ -6,7 +6,7 @@ services:
   # ---------------------------------------------------------------------------
   espocrm:
     image: espocrm/espocrm:9.2.7-apache
-    container_name: ${CONTAINER_NAME:-espocrm}
+    container_name: veridata.${CONTAINER_NAME:-espocrm}
     environment:
       - ESPOCRM_DATABASE_PLATFORM=Postgresql
       - ESPOCRM_DATABASE_HOST=${POSTGRES_HOST}
@@ -19,12 +19,10 @@ services:
       - ESPOCRM_ADMIN_PASSWORD=${ESPOCRM_ADMIN_PASSWORD}
     volumes:
       - ${VOLUME_NAME}_data:/var/www/html
-    ports:
-      - "${ESPOCRM_PORT}:80"
     networks:
       veridata.network:
         aliases:
-          - veridata.${CONTAINER_NAME:-espocrm}.rails
+          - veridata.${CONTAINER_NAME:-espocrm}
     restart: always
     # --- PRODUCTION UPGRADES ---
     healthcheck:
@@ -43,7 +41,7 @@ services:
   # ---------------------------------------------------------------------------
   espocrm-daemon:
     image: espocrm/espocrm:9.2.7-apache
-    container_name: ${CONTAINER_NAME:-espocrm}-daemon
+    container_name: veridata.${CONTAINER_NAME:-espocrm}_daemon
     command: php daemon.php
     environment:
       - ESPOCRM_DATABASE_PLATFORM=Postgresql
@@ -57,7 +55,7 @@ services:
     networks:
       veridata.network:
         aliases:
-          - veridata.${CONTAINER_NAME:-espocrm}.daemon
+          - veridata.${CONTAINER_NAME:-espocrm}_daemon
     restart: always
 
   # ---------------------------------------------------------------------------
@@ -65,7 +63,7 @@ services:
   # ---------------------------------------------------------------------------
   espocrm-websocket:
     image: espocrm/espocrm:9.2.7-apache
-    container_name: ${CONTAINER_NAME:-espocrm}-websocket
+    container_name: veridata.${CONTAINER_NAME:-espocrm}_websocket
     command: php websocket.php
     environment:
       - ESPOCRM_DATABASE_PLATFORM=Postgresql
@@ -76,12 +74,10 @@ services:
       - ESPOCRM_DATABASE_NAME=${POSTGRES_DB}
     volumes:
       - ${VOLUME_NAME}_data:/var/www/html
-    ports:
-      - "${ESPOCRM_WEB_SOCKET_PORT}:8080"
     networks:
       veridata.network:
         aliases:
-          - veridata.${CONTAINER_NAME:-espocrm}.websocket
+          - veridata.${CONTAINER_NAME:-espocrm}_websocket
     restart: always
 
 # ---------------------------------------------------------------------------

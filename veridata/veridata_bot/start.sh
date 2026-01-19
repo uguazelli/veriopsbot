@@ -8,4 +8,4 @@ set -e
 python -m app.scripts.pre_start
 
 # Start the application
-exec uvicorn app.main:app --host 0.0.0.0 --port 4019 --reload
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

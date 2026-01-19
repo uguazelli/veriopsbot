@@ -1,0 +1,15 @@
+
+services:
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: veridata_tunnel
+    restart: always
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - veridata.network
+
+networks:
+  veridata.network:
+    external: true
