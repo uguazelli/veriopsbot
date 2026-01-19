@@ -1,4 +1,4 @@
-
+name: infrastructure
 services:
   tunnel:
     image: cloudflare/cloudflared:latest

@@ -1,4 +1,4 @@
-name: databases
+name: infrastructure
 services:
   postgres:
     image: pgvector/pgvector:pg18

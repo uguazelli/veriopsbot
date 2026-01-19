@@ -1,4 +1,4 @@
-name: databases
+name: infrastructure
 services:
   pgadmin:
     container_name: veridata.pgadmin
