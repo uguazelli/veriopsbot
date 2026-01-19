@@ -1,5 +1,6 @@
 include:
   - path: ./cloudflared/docker-compose.yml
+  - path: ./dozzle/docker-compose.yml
   - path: ./postgres/docker-compose.yml
   - path: ./redis/docker-compose.yml
   # - path: ./pgadmin/docker-compose.yml
