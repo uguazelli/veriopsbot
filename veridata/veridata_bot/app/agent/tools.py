@@ -68,20 +68,48 @@ async def search_knowledge_base(query: str, config: RunnableConfig) -> str:
 @tool
 async def lookup_pricing(query: str, config: RunnableConfig) -> str:
     """
-    Fetch the product price list and rules from the official Google Sheet.
-    Use this when the user asks about prices, costs, or product availability.
-    Returns the RAW text data from the sheet. You must then interpret it to answer.
+    Fetch the product price list.
+    Args:
+        query: What the user is looking for (e.g., "shampoo", "haircut", "prices").
     """
     configuration = config.get("configurable", {})
     google_sheets_url = configuration.get("google_sheets_url")
+    # Check if client is configured as Enterprise (large catalog)
+    client_config = configuration.get("client_config", {})
+    is_enterprise = client_config.get("is_enterprise", False)
 
     if not google_sheets_url:
         return "Error: No pricing sheet configured."
 
+    # Enterprise Logic: Force specific search
+    if is_enterprise:
+        # Heuristic: If query is too broad, refuse to dump.
+        clean_query = query.lower().strip()
+        broad_terms = ["price", "prices", "cost", "list", "all", "product", "products", "preço", "lista", "tudo"]
+
+        # If query is short or generic, ask for specifics
+        if len(clean_query) < 4 or clean_query in broad_terms:
+            return "DATABASE TIP: There are too many products to list. Please search for a specific item (e.g., 'red bottle', 'haircut')."
+
+        # Perform filtered search
+        try:
+            data = await fetch_google_sheet_data(google_sheets_url, query=clean_query)
+            if not data:
+                 return "No matching products found."
+            return f"SEARCH RESULTS for '{query}':\n{data}"
+        except Exception as e:
+            logger.error(f"Pricing Tool Error: {e}")
+            return "Could not fetch pricing data."
+
+    # Standard Logic (Small Catalog): Dump everything or filter lightly
     try:
-        data = await fetch_google_sheet_data(google_sheets_url)
+        # We pass the query just in case, but usually we dump all for small clients
+        # unless they asked for something specific.
+        # Actually, for small clients, let's just dump ALL so the AI has full context
+        # (cross-selling, alternatives).
+        data = await fetch_google_sheet_data(google_sheets_url, query=None)
         if not data:
-            return "The pricing sheet is empty or could not be read."
+            return "The pricing sheet is empty."
         return f"PRICING DATA:\n{data}"
     except Exception as e:
         logger.error(f"Pricing Tool Error: {e}")

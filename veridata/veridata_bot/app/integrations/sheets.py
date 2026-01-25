@@ -7,7 +7,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-async def fetch_google_sheet_data(url: str) -> str:
+async def fetch_google_sheet_data(url: str, query: str = None) -> str:
     try:
         if "/edit" in url:
             url = url.split("/edit")[0] + "/export?format=csv"
@@ -32,6 +32,16 @@ async def fetch_google_sheet_data(url: str) -> str:
                 item_desc = row.get("Description (AI Context)") or row.get("item_desc") or ""
                 ai_notes = row.get("AI Notes (Hidden Rules)") or row.get("context") or ""
 
+                # --- Filtering Logic ---
+                if query:
+                    # Basic case-insensitive keyword match
+                    query_lower = query.lower()
+                    # Check name, description, SKU
+                    search_target = f"{name} {item_desc} {sku} {ai_notes}".lower()
+                    if query_lower not in search_target:
+                        continue
+                # -----------------------
+
                 # Combine description and hidden rules
                 full_context = []
                 if item_desc: full_context.append(f"Desc: {item_desc}")
@@ -41,11 +51,17 @@ async def fetch_google_sheet_data(url: str) -> str:
                 if name:
                     items.append(f"* {name} ({sku}): {price} | {context_str}")
 
-            logger.info(f"📋 Sheet processing complete. Rows processed: {rows_processed}, Items found: {len(items)}")
+            logger.info(f"📋 Sheet processing complete. Filter: '{query or 'ALL'}'. Rows: {rows_processed}, Matches: {len(items)}")
 
             if not items:
+                if query:
+                    return f"No products found matching '{query}'."
                 logger.warning("Empty items list after processing CSV.")
                 return ""
+
+            # Simple truncation for safety if filtering returns too many
+            if len(items) > 50:
+                 return f"[TOO MANY RESULTS] Found {len(items)} items matching '{query}'. Please be more specific."
 
             res = "\n[LIVE PRICING & PRODUCT DATA]\n" + "\n".join(items) + "\n(Source: Live Google Sheet)\n\n"
             logger.info(f"DEBUG: Pricing Data being sent to Agent:\n{res}")

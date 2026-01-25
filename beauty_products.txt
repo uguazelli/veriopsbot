@@ -1,0 +1,10 @@
+ID / SKU	Product Name	Description (AI Context)
+item_id	item_name	item_desc
+BL-105	Woman's Haircut	Includes deep conditioning treatment
+BL-210	Classic Facial	60-minute cleansing and hydration facial
+BL-301	Full Color	Single process color application
+PR-450	Volumizing Spray	200ml heat protectant and volume boost
+BL-500	Brow Wax & Tint	Professional brow shaping and color
+PR-461	Nail Polish Set	Set of 3 seasonal long-wear polishes
+BL-120	Kid's Haircut	Basic trim for children under 10
+BL-600	Bridal Makeup Trial	Consultation and makeup application for bride
