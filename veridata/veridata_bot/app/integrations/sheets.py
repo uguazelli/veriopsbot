@@ -48,6 +48,7 @@ async def fetch_google_sheet_data(url: str) -> str:
                 return ""
 
             res = "\n[LIVE PRICING & PRODUCT DATA]\n" + "\n".join(items) + "\n(Source: Live Google Sheet)\n\n"
+            logger.info(f"DEBUG: Pricing Data being sent to Agent:\n{res}")
             return res
     except Exception as e:
         logger.error(f"Failed to fetch Google Sheet: {e}")

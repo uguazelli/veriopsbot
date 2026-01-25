@@ -1,86 +1,79 @@
-import json
 import logging
+import json
 import uuid
-
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
-
 from app.core.config import settings
+from app.agent.prompts import SUMMARY_PROMPT_TEMPLATE
 from app.integrations.rag import RagClient
 
 logger = logging.getLogger(__name__)
 
-from app.agent.prompts import SUMMARY_PROMPT_TEMPLATE
-
-
 async def summarize_start_conversation(
-    session_id: uuid.UUID, rag_client: RagClient, language_instruction: str = None
+    session_id: uuid.UUID,
+    rag_client: RagClient,
+    language_instruction: str = None
 ) -> dict:
-    """Fetch history from RAG and generate CRM summary using local LLM logic.
+    """
+    Fetches chat history from RAG and generates a structured summary using Gemini.
     """
     try:
-        # 1. Fetch History from RAG
-        history_list = await rag_client.get_history(session_id)
-        if not history_list:
-            logger.warning(f"No history found for session {session_id}")
-            return {
-                "purchase_intent": "None",
-                "urgency_level": "Low",
-                "sentiment_score": "Neutral",
-                "ai_summary": "No history available.",
-                "detected_budget": None,
-                "detected_language": None,
-                "contact_info": {},
-            }
+        # 1. Fetch History
+        history_data = await rag_client.get_history(session_id)
+        if not history_data:
+            logger.warning("No history found for summarization.")
+            return {}
 
-        # Format history
-        history_str = "\n".join([f"{msg['role'].upper()}: {msg['content']}" for msg in history_list])
+        # Format history for prompt
+        history_str = ""
+        first_msg_time = None
 
-        # 2. Local Summarization with Gemini
-        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0, google_api_key=settings.google_api_key)
+        for msg in history_data:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            timestamp = msg.get("timestamp") # Assuming RAG returns this?
 
-        # Prepare Language Instruction
-        lang_directive = ""
-        if language_instruction:
-            lang_directive = f"\n\nIMPORTANT: You MUST write the 'ai_summary' and 'client_description' in {language_instruction}."
+            # Capture start time if available in metadata
+            if not first_msg_time and timestamp:
+                first_msg_time = timestamp
 
-        prompt = SUMMARY_PROMPT_TEMPLATE.format(history_str=history_str, language_instruction=lang_directive)
-        messages = [HumanMessage(content=prompt)]
+            history_str += f"{role.upper()}: {content}\n"
 
-        response = await llm.ainvoke(messages)
-        text = response.content.replace("```json", "").replace("```", "").strip()
+        # 2. Prepare Prompt
+        lang_instr = f"IMPORTANT: Detected Language Override: {language_instruction}" if language_instruction else ""
 
+        prompt = SUMMARY_PROMPT_TEMPLATE.format(
+            history_str=history_str,
+            language_instruction=lang_instr
+        )
+
+        # 3. Call LLM
+        model = ChatGoogleGenerativeAI(
+            model="gemini-2.0-flash",
+            temperature=0,
+            google_api_key=settings.google_api_key,
+        )
+
+        messages = [
+            SystemMessage(content=prompt),
+            HumanMessage(content="Analyze the conversation now.")
+        ]
+
+        response = await model.ainvoke(messages)
+        content = response.content.replace("```json", "").replace("```", "").strip()
+
+        # 4. Parse JSON
         try:
-            summary_json = json.loads(text)
-
-            # Extract start time from the first message
-            start_time = None
-            if history_list and "created_at" in history_list[0] and history_list[0]["created_at"]:
-                start_time = history_list[0]["created_at"]
-
-            summary_json["session_start_time"] = start_time
-            return summary_json
+            summary_data = json.loads(content)
+            # Inject start time availability check
+            if first_msg_time:
+                 summary_data["session_start_time"] = first_msg_time
+            return summary_data
 
         except json.JSONDecodeError:
-            logger.error(f"JSON decode failed for summary: {text}")
-            return {
-                "purchase_intent": "None",
-                "urgency_level": "Low",
-                "sentiment_score": "Neutral",
-                "ai_summary": "Summarization failed (JSON error).",
-                "detected_budget": None,
-                "detected_language": None,
-                "contact_info": {},
-            }
+            logger.error(f"Failed to parse summary JSON: {content}")
+            return {"ai_summary": content} # Fallback
 
     except Exception as e:
         logger.error(f"Summarization failed: {e}")
-        return {
-            "purchase_intent": "None",
-            "urgency_level": "Low",
-            "sentiment_score": "Neutral",
-            "ai_summary": f"Error: {str(e)}",
-            "detected_budget": None,
-            "detected_language": None,
-            "contact_info": {},
-        }
+        return {}

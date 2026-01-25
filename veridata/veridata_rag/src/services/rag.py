@@ -114,7 +114,7 @@ async def generate_answer(
     complexity_score: int = 5,
     pricing_intent: bool = False,
     external_context: Optional[str] = None,
-) -> tuple[str, bool, str]:
+) -> tuple[str, str]:
     log_start(logger, f"Generating answer for query: '{query}'")
 
     # 0. Load Dynamic Config (DB Override)
@@ -189,12 +189,6 @@ async def generate_answer(
     # 5. Persistence
     await save_interaction(session_id, query, answer)
 
-    # 6. Handoff Detection
-    requires_human_handoff = False
-    if "[HANDOFF]" in answer:
-        requires_human_handoff = True
-        # Optional: We could strip it, but user prompt implies keeping it "followed by".
-        # We will keep it strictly as explicitly requested.
-
-    # Return (Answer, Requires Human Handover, Context)
-    return answer, requires_human_handoff, context_str if requires_rag else ""
+    # Return (Answer, Context)
+    # Handoff Detection removed (handled by Bot Agent Tool Call)
+    return answer, context_str if requires_rag else ""

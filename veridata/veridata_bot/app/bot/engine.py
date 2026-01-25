@@ -1,13 +1,14 @@
 import logging
 
 from fastapi import HTTPException
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import uuid
 from langfuse.langchain import CallbackHandler
 from app.agent.graph import agent_app
+from app.agent.prompts import AGENT_SYSTEM_PROMPT
 from app.bot.actions import (
     check_subscription_quota,
     execute_crm_action,
@@ -233,24 +234,24 @@ async def process_bot_event(client_slug: str, payload_dict: dict, db: AsyncSessi
             logger.warning(f"Failed to fetch chat history: {e}")
 
     # Combine History + Current Message
-    full_messages = history_messages + [HumanMessage(content=user_query)]
+    # Prepend System Prompt explicitly
+    full_messages = [SystemMessage(content=AGENT_SYSTEM_PROMPT)] + history_messages + [HumanMessage(content=user_query)]
 
     # ==================================================================================
-    # STEP 8: EXECUTE AGENT (LangGraph)
-    # 1. Router Node: Decides usage (RAG vs Human Handoff).
-    # 2. Execution Node: Runs RAG query or generates Handoff message.
-    # 3. Output: Returns final Answer and Metadata (requires_human).
+    # STEP 8: EXECUTE AGENT (ReAct)
+    # Use LangGraph ReAct agent.
+    # We pass the conversation history in 'messages'.
+    # We pass CONFIGURATION (RAG keys, Sheet URL) in 'configurable'.
     # ==================================================================================
     initial_state = {
         "messages": full_messages,
-        "tenant_id": rag_config.get("tenant_id"),
-        "session_id": str(session.rag_session_id) if session.rag_session_id else None,
+    }
+
+    # Configuration for Tools
+    run_config = {
+        "rag_config": rag_config,
         "google_sheets_url": rag_config.get("google_sheets_url"),
-        "client_slug": client_slug,
-        "sender_name": event.sender.name if event.sender else "",
-        "sender_email": event.sender.email if event.sender else "",
-        "sender_phone": event.sender.phone_number if event.sender else "",
-        "handoff_rules": rag_config.get("handoff_rules"),
+        "rag_session_id": str(session.rag_session_id) if session.rag_session_id else None,
     }
 
     logger.info(f"DEBUG: Graph Input Messages: {[m.content for m in full_messages]}")
@@ -277,6 +278,7 @@ async def process_bot_event(client_slug: str, payload_dict: dict, db: AsyncSessi
         langfuse_handler = CallbackHandler()
 
         # Pass context via metadata (Langfuse specific keys)
+        # AND pass 'configurable' for our Tools
         result = await agent_app.ainvoke(
             initial_state,
             config={
@@ -285,13 +287,48 @@ async def process_bot_event(client_slug: str, payload_dict: dict, db: AsyncSessi
                     "langfuse_user_id": lf_user_id,
                     "langfuse_session_id": lf_session_id,
                 },
+                "configurable": run_config
             },
         )
         answer = result["messages"][-1].content
         logger.info(f"DEBUG: Agent Answer: {answer}")
 
-        requires_human = result.get("requires_human", False)
-        rag_session_id = result.get("session_id")
+        # Simple Handoff logic: Check if agent said so, or if tool flagged it?
+        # For simplicity in ReAct, we check keywords in the answer or if the tool was used (harder to check tool usage in result['messages'] without parsing).
+        # We can also rely on the System Prompt instruction: "If you cannot solve... say 'connecting to human'".
+
+        requires_human = False
+
+        # Check if "transfer_to_human" tool was called in the recent execution
+        # We look at the last few messages returned by the agent
+        # result["messages"] contains the full history, but we only care about the recent turn
+        for msg in reversed(result["messages"]):
+            if isinstance(msg, HumanMessage):
+                break
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    if tc.get("name") == "transfer_to_human":
+                        requires_human = True
+                        break
+            if requires_human:
+                break
+
+        if requires_human:
+            logger.info("👨‍💼 Agent requested Handoff via Tool Call.")
+
+        # History is managed by LangGraph. We still persist to RAG Service for analytics/context if needed.
+        # But wait, ReAct agent appends to 'messages'.
+        # We need to manually persist the *new* interactions to the External RAG Service so next time we fetch history it's there.
+        # (Since we are using an external RAG service for history, not just local memory).
+
+        # Extract new messages (User + AI)
+        # The result["messages"] contains the WHOLE history if we passed it in.
+        # We just want to save the new User message and the new AI message.
+
+        # Actually, simpler: We just append the User Query and the Final Answer.
+        # Intermediate Tool messages are usually not saved to the persistent RAG history unless desired.
+
+        rag_session_id = session.rag_session_id
 
         try:
             rag_client_for_save = RagClient(
@@ -311,9 +348,9 @@ async def process_bot_event(client_slug: str, payload_dict: dict, db: AsyncSessi
                     logger.info(f"💾 Persisted RAG Session ID via SQL: {rag_session_id}")
 
             # 2. Check if we need to manually persist the interaction
-            # If the RAG node ran, it returns "history_saved=True" (and we trust it).
-            # If NOT, we must save manually.
-            history_saved = result.get("history_saved", False)
+            # The ReAct agent in 'graph.py' does NOT have the 'history_saved' logic anymore (that was in rag_node).
+            # So we MUST save manually now.
+            history_saved = False
 
             if not history_saved:
                  # Check if we have an active RAG session to append to
