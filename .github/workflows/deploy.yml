@@ -16,16 +16,23 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           script: |
-            # Set the project root to avoid navigation errors
             PROJECT_ROOT="/home/administrator/VeriRevOps"
 
             echo "📥 Pulling latest code..."
             cd $PROJECT_ROOT
+            git checkout main
             git pull
 
             echo "🛠️ Rebuilding VeriData"
             cd $PROJECT_ROOT/veridata
+
+            # Tip: 'down' causes downtime. You can often just run 'up --build -d'
+            # and Docker will recreate only what changed with minimal downtime.
             docker compose down
             docker compose up --build -d
+
+            echo "🧹 Cleaning up old images..."
+            # This is the critical line to save disk space:
+            docker image prune -f
 
             echo "🚀 Deployment Complete!"
