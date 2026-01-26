@@ -235,7 +235,16 @@ async def process_bot_event(client_slug: str, payload_dict: dict, db: AsyncSessi
 
     # Combine History + Current Message
     # Prepend System Prompt explicitly
-    full_messages = [SystemMessage(content=AGENT_SYSTEM_PROMPT)] + history_messages + [HumanMessage(content=user_query)]
+
+    # Check for custom instructions in client config
+    client_config = configs.get("client_config", {})
+    custom_instructions = client_config.get("custom_instructions", "")
+
+    final_system_prompt = AGENT_SYSTEM_PROMPT
+    if custom_instructions:
+        final_system_prompt += f"\n\n**CUSTOM CLIENT INSTRUCTIONS (OVERRIDE DEFAULT):**\n{custom_instructions}"
+
+    full_messages = [SystemMessage(content=final_system_prompt)] + history_messages + [HumanMessage(content=user_query)]
 
     # ==================================================================================
     # STEP 8: EXECUTE AGENT (ReAct)
