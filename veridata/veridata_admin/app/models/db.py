@@ -56,6 +56,9 @@ class ServiceConfig(Base):
 
     client: Mapped["Client"] = relationship(back_populates="service_configs")
 
+    def __str__(self):
+        return f"ServiceConfig {self.id}"
+
 
 class Subscription(Base):
     __tablename__ = "subscriptions"
@@ -69,6 +72,9 @@ class Subscription(Base):
 
     client: Mapped["Client"] = relationship(back_populates="subscriptions")
 
+    def __str__(self):
+        return f"Subscription {self.id} - Limit: {self.quota_limit}"
+
 
 class BotSession(Base):
     __tablename__ = "bot_sessions"
@@ -79,6 +85,9 @@ class BotSession(Base):
     rag_session_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     client: Mapped["Client"] = relationship(back_populates="bot_sessions")
+
+    def __str__(self):
+        return f"Session {self.external_session_id}"
 
 
 class GlobalConfig(Base):

@@ -37,6 +37,7 @@ class ClientAdmin(ModelView, model=Client):
     name = "Client / Tenant"
     name_plural = "Clients / Tenants"
     column_list = [Client.id, Client.name, Client.slug, Client.is_active]
+    form_columns = [Client.name, Client.slug, Client.is_active]
     can_create = True
     can_edit = True
     can_delete = True
