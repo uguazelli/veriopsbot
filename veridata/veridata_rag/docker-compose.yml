@@ -3,6 +3,7 @@ name: veridata
 services:
   veridata_rag:
     build: .
+    restart: unless-stopped
     container_name: veridata.rag
     env_file:
       - .env

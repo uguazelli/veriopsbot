@@ -3,6 +3,7 @@ name: veridata
 services:
   veridata_admin:
     build: .
+    restart: unless-stopped
     container_name: veridata.admin
     env_file:
       - .env
