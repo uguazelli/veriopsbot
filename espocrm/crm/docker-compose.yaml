@@ -43,7 +43,7 @@ services:
     restart: always
     # --- PRODUCTION UPGRADES ---
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/api/v1/status"]
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
       interval: 30s
       timeout: 10s
       retries: 3
